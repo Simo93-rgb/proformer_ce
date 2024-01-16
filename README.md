@@ -17,8 +17,8 @@ Proformer is a transformer based model for process traces presented in"[Structur
 To install the required library using pip:
 
 ```bash
-git clone https://gitlab.di.unipmn.it/Christopher.Irwin/proformer.git
-cd proformer
+git clone https://github.com/christopher-irw/proformer_ce.git
+cd proformer_ce
 pip install -r requirements.txt
 ```
 
