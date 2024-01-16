@@ -10,6 +10,8 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from tempfile import TemporaryDirectory
 from typing import Tuple
 
+# This code is a modification of the original codebase found at 
+# https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
 
 class PositionalEncoding(nn.Module):
 

@@ -7,6 +7,10 @@ import random
 import pickle
 from torchtext.vocab import build_vocab_from_iterator
 
+# This code was ispired by the following example:
+# https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
+
+
 class Dataloader():
     def __init__(self, filename, opt):
         self.opt = opt
