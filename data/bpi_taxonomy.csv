@@ -1,0 +1,24 @@
+dst, src
+A_SUBMITTED, Proposal Stage
+A_PARTLYSUBMITTED, Proposal Stage
+A_PREACCEPTED, Proposal Stage
+A_DECLINED, Proposal Stage
+A_ACCEPTED, Proposal Stage
+W_Afhandelen leads, Decision Stage
+A_FINALIZED, Decision Stage
+W_Valideren aanvraag, Decision Stage
+W_Beoordelen fraude, Decision Stage
+O_SELECTED, Decision Stage
+W_Nabellen incomplete dossiers, Service Stage
+W_Nabellen offertes, Service Stage
+O_CREATED, Service Stage
+O_SENT, Service Stage
+O_CANCELLED, Service Stage
+O_SENT_BACK, Service Stage
+O_ACCEPTED, Service Stage
+O_DECLINED, Service Stage
+A_CANCELLED, Service Stage
+A_APPROVED, Service Stage
+A_ACTIVATED, Service Stage
+A_REGISTERED, Service Stage
+W_Wijzigen contractgegevens, Service Stage

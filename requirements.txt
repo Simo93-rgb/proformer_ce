@@ -1,0 +1,17 @@
+torch
+tqdm
+scikit-learn
+pandas
+matplotlib
+seaborn
+networkx
+torchtext
+optuna
+torch_geometric
+pm4py
+# torch_sparse --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
+# pyg_lib --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
+# torch_scatter --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
+# torch_sparse --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
+# torch_cluster --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
+# torch_spline_conv --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
