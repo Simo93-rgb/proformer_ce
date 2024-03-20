@@ -1,6 +1,6 @@
 # Proformer
 
-Proformer is a transformer based model for process traces presented in"[Structural Positional Encoding for Knowledge Integration in Transformer-based Medical Process Monitoring](https://ceur-ws.org/Vol-3578/paper3.pdf)". Here we present the source code applied to the [BPI 2012 challenge](10.4121/uuid:0c60edf1-6f83-4e75-9367-4c63b3e9d5bb) dataset.
+Proformer is a transformer based model for process traces presented in "[Structural Positional Encoding for Knowledge Integration in Transformer-based Medical Process Monitoring](https://arxiv.org/abs/2403.08836)". Here we present the source code applied to the [BPI 2012 challenge](10.4121/uuid:0c60edf1-6f83-4e75-9367-4c63b3e9d5bb) dataset.
 
 ## Performance
 
@@ -36,6 +36,17 @@ python run_proformer.py
 ## Examples
 
 The `notebooks` directory contains the dataset preprocessing. In general, it is sufficient to have a csv containing a `case_id` column representing a unique identifier for the cases and a `activity` column representing the applied actions.
+
+## Citation
+
+```latex
+@article{irwin2024structural,
+  title={Structural Positional Encoding for knowledge integration in transformer-based medical process monitoring},
+  author={Irwin, Christopher and Dossena, Marco and Leonardi, Giorgio and Montani, Stefania},
+  journal={arXiv preprint arXiv:2403.08836},
+  year={2024}
+}
+```
 
 ## Contacts
 
