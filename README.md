@@ -4,7 +4,7 @@ Proformer is a transformer based model for process traces presented in "[Structu
 
 ## Performance
 
-|  BPI20212   |    No SPE   |      SPE      |
+|  BPI2012    |    No SPE   |      SPE      |
 |-------------|-------------|---------------|
 | **Acc@1**       | 0.8140      | 0.8601        |
 | **Acc@3**       | 0.9742      | 0.9800        |
