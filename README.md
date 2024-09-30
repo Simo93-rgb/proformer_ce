@@ -4,7 +4,7 @@ Proformer is a transformer based model for process traces presented in "[Structu
 
 ## Architecture
 
-\[Architecture](architecture.png)
+![Architecture](architecture.png)
 
 ## Performance
 
