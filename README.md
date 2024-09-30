@@ -2,6 +2,10 @@
 
 Proformer is a transformer based model for process traces presented in "[Structural Positional Encoding for Knowledge Integration in Transformer-based Medical Process Monitoring](https://arxiv.org/abs/2403.08836)". Here we present the source code applied to the [BPI 2012 challenge](10.4121/uuid:0c60edf1-6f83-4e75-9367-4c63b3e9d5bb) dataset.
 
+## Architecture
+
+\[Architecture](architecture.png)
+
 ## Performance
 
 |  BPI2012    |    No SPE   |      SPE      |
