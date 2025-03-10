@@ -12,7 +12,7 @@ bpi_params = {
                 'use_pe': False,
                 # 'use_taxonomy': True,
                 "epochs": 150,
-                "bptt": 175, 
+                "bptt": 237, 
                 "split_actions": True, 
                 "pad": True,
                 "test_split_size": 5000,

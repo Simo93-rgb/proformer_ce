@@ -11,15 +11,29 @@ from proformer import TransformerModel
 from params import bpi_params
 from taxonomy import Taxonomy, TaxonomyEmbedding
 import pickle
+from datetime import datetime
+import pandas as pd
+import numpy as np
+
+"""
+This module implements training, evaluation, and execution of the Proformer model
+for process mining and prediction tasks. It includes functionality for hyperparameter
+configuration, model training with transformer architecture, and performance evaluation.
+"""
 
 def parse_params():
-    
+    """
+    Parse command-line arguments for Proformer configuration.
+
+    Returns:
+        dict: Dictionary containing all configuration parameters
+    """
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--test_split_size", type=int, default=500, help="Number of examples to use for valid and test")
+    parser.add_argument("--test_split_size", type=int, default=5000, help="Number of examples to use for valid and test")
     parser.add_argument("--pad", action="store_true", help="Pads the sequences to bptt", default=True)
-    parser.add_argument("--bptt", type=int, default=34, help="Max len of sequences")
+    parser.add_argument("--bptt", type=int, default=237, help="Max len of sequences")
     parser.add_argument("--split_actions", action="store_true", default=True, help="Splits multiple action if in one (uses .split('_se_'))")
     parser.add_argument("--batch_size", type=int, default=2, help="Regulates the batch size")
     parser.add_argument("--pos_enc_dropout", type=float, default=0.1, help="Regulates dropout in pe")
@@ -37,6 +51,9 @@ def parse_params():
     parser.add_argument("--taxonomy_emb_type", type=str, default="laplacian")
     parser.add_argument("--taxonomy_emb_size", type=int, default=16)
 
+#    parser.add_argument("--dataset", type=str, default="data/BPI_Challenge_2012.csv")
+    parser.add_argument("--dataset", type=str, default="data\ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv")
+    parser.add_argument("--taxonomy", type=str, default="data/bpi_taxonomy.csv")
 
     args = parser.parse_args()
     opt = vars(args)
@@ -44,30 +61,29 @@ def parse_params():
     return opt
 
 
-# -- SLOW IMPLEMENTATION --
-# def get_ranked_metrics(accs, out, t):
-#     ks = list(accs.keys())
-#     out = torch.softmax(out, dim=1).topk(max(ks), dim=1).indices
-#     #out = out.topk(max(ks), dim=1).indices
-#     print(out)
-#     print(t)
-#     for k in ks:
-#         all = 0
-#         for i, el in enumerate(out[:,:k]):
-#             all+=(torch.isin(el, t[i]).max().int())
-#         accs[k] += all / t.size(0)
-
-#     return accs
-
 def get_ranked_metrics(accs, out, t):
+    """
+    Calculate ranked metrics (accuracy@k) for model predictions.
+
+    Args:
+        accs (dict): Dictionary with k values as keys and accumulated accuracies as values
+        out (torch.Tensor): Model output logits
+        t (torch.Tensor): Target labels
+
+    Returns:
+        dict: Updated accuracies dictionary with new values
+    """
     ks = list(accs.keys())
+    # Get top-k predictions with highest probability
     out = torch.softmax(out, dim=1).topk(max(ks), dim=1).indices
-    # out = out.topk(max(ks), dim=1).indices
+
+    # Create a tensor of boolean masks indicating if target appears in top-k predictions
     all = []
     for i, el in enumerate(out[:,:max(ks)]):
         all.append(torch.isin(el, t[i]))
-    
+
     all = torch.vstack(all)
+    # Calculate accuracy for each k value
     for k in ks:
         accs[k] += all[:,:k].int().sum() / t.size(0)
 
@@ -75,7 +91,19 @@ def get_ranked_metrics(accs, out, t):
 
 
 def train(model, opt, loader, optimizer):
-    
+    """
+    Train the model for one epoch.
+
+    Args:
+        model (TransformerModel): The Proformer model to train
+        opt (dict): Configuration parameters
+        loader (Dataloader): Data loader for training data
+        optimizer (torch.optim.Optimizer): Optimizer for parameter updates
+
+    Returns:
+        float: Average training loss for the epoch
+    """
+    batch:int=0
     model.train()
     total_loss = 0.
     log_interval = 200
@@ -84,63 +112,91 @@ def train(model, opt, loader, optimizer):
     num_batches = len(loader.train_data) // opt["bptt"]
 
     for batch, i in enumerate(range(0, loader.train_data.size(0) - 1, opt["bptt"])):
-        
+        # Get batch data and targets
         data, targets = loader.get_batch(loader.train_data, i)
+        # Create attention mask to prevent attending to future tokens
         attn_mask = model.create_masked_attention_matrix(data.size(0)).to(opt["device"])
 
         output = model(data, attn_mask)
         output_flat = output.view(-1, model.ntokens)
 
+        # Create mask to ignore padding tokens (1 and 8)
         pad_mask = (targets != 1) & (targets != 8)
         targets = targets[pad_mask]
         output_flat = output_flat[pad_mask, :]
-        
+
         weights = torch.ones(model.ntokens).to(opt["device"])
-        
+
+        # Calculate cross entropy loss
         loss = F.cross_entropy(output_flat, targets, weight=weights)
 
+        # Backpropagation and optimization
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)  # Gradient clipping for stability
         optimizer.step()
-    
+
         total_loss += loss.item()
 
     return total_loss / (batch+1)
 
 
 def evaluate(model, eval_data, loader, opt):
-    model.eval() 
+    """
+    Evaluate the model on validation or test data.
+
+    Args:
+        model (TransformerModel): The Proformer model to evaluate
+        eval_data (torch.Tensor): Evaluation dataset
+        loader (Dataloader): Data loader
+        opt (dict): Configuration parameters
+
+    Returns:
+        tuple: (loss, accuracies_dict) containing perplexity and accuracy metrics
+    """
+    model.eval()
     total_loss = 0.
-    accs = {1: 0., 3: 0., 5: 0.}
+    accs = {1: 0., 3: 0., 5: 0.}  # Track accuracy@1, accuracy@3, accuracy@5
 
     with torch.no_grad():
         for batch,i in enumerate(range(0, eval_data.size(0) - 1, opt["bptt"])):
-
+            # Get batch data
             data, targets = loader.get_batch(eval_data, i)
             attn_mask = model.create_masked_attention_matrix(data.size(0)).to(opt["device"])
-            
+
             seq_len = data.size(0)
             output = model(data, attn_mask)
-            
+
             output_flat = output.view(-1, model.ntokens)
 
+            # Filter out padding tokens
             pad_mask = (targets != 1) & (targets != 8)
             targets = targets[pad_mask]
             output_flat = output_flat[pad_mask, :]
-            
+
+            # Calculate loss and accuracy metrics
             total_loss += seq_len * F.cross_entropy(output_flat, targets).item()
             accs = get_ranked_metrics(accs, output_flat, targets)
 
+        # Normalize metrics by number of batches
         for k in accs.keys():
             accs[k] = accs[k] / (batch+1)
         loss = total_loss / (len(eval_data) - 1)
-    
+
     return loss, accs
 
 
 def main(opt):
-    random.seed(123)
+    """
+    Main function to train and evaluate the Proformer model.
+
+    Args:
+        opt (dict, optional): Configuration parameters. If None, params are parsed from command line
+
+    Returns:
+        tuple: (best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs)
+    """
+    random.seed(datetime.now())
 
     if(opt == None):
         print("-- PARSING CMD ARGS --")
@@ -164,31 +220,51 @@ def main(opt):
     # opt["lr"] = 3e-3
     # opt["taxonomy_emb_type"] = "laplacian"
     # opt["taxonomy_emb_size"] = 8
-    # 
+    #
     # ------------------------------
-    
-    loader = Dataloader("data/BPI_Challenge_2012.csv", opt)
+
+    # Initialize data loader and create dataset splits
+    loader = Dataloader(opt["dataset"], opt)
     loader.get_dataset(opt["test_split_size"])
 
-    tax = TaxonomyEmbedding(loader.vocab, "data/bpi_taxonomy.csv", opt)
-    
-    model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
-    # model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
+    # Uncomment to enable taxonomy embeddings
+    # tax = TaxonomyEmbedding(loader.vocab, opt["taxonomy"], opt)
+    # model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
 
+    # Initialize model
+    model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
+
+    # Setup optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1., gamma=opt["gamma_scheduler"])
     best_val_acc = -float('inf')
 
+    # Training loop
     for epoch in range(1, opt["epochs"]+1):
-        
-        epoch_start_time = time.time()  
-        
+
+        epoch_start_time = time.time()
+
+        # Train for one epoch
         train_loss = train(model, opt, loader, optimizer)
+        # Evaluate on validation set
         valid_loss, valid_accs = evaluate(model, loader.valid_data, loader, opt)
         valid_ppl = math.exp(valid_loss)
-        
+
+        # Extract and save hidden states (trace embeddings)
+        print ("last_hidden_ststes - size: ", model.last_hidden_states.shape)
+        print ("last_hidden_ststes - H_size: ", model.last_hidden_states.shape[0])
+        print ("last_hidden_ststes - V_size: ", model.last_hidden_states.shape[1])
+        print (model.last_hidden_states)
+
+        # Move tensor from GPU to CPU and save as CSV
+        mytensor = model.last_hidden_states.cpu()
+        DF = pd.DataFrame(np.reshape(mytensor, (model.last_hidden_states.shape[0]*model.last_hidden_states.shape[1], -1)))
+        DF = DF.transpose()
+        DF.to_csv("models/hidden_states.csv")
+
         elapsed = time.time() - epoch_start_time
 
+        # Print progress every 10 epochs
         if((epoch % 10) == 0):
             print('-' * 104)
             print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
@@ -197,6 +273,7 @@ def main(opt):
                   f'acc@3 {valid_accs[3]:.4f} |')
             print('-' * 104)
 
+        # Save best model based on validation accuracy
         if (valid_accs[1] > best_val_acc):
             best_train_loss = train_loss
             best_valid_loss = valid_loss
@@ -204,16 +281,19 @@ def main(opt):
             best_valid_accs = valid_accs
             best_val_acc = valid_accs[1]
 
-            # -- execute eval on testset -- 
+            # Evaluate on test set when we find a better model
             test_loss, test_accs = evaluate(model, loader.test_data, loader, opt)
             test_ppl = math.exp(test_loss)
             print(f"| Performance on test: Test ppl: {test_ppl:5.2f} | "
                   f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}"+(" ")*23+"|")
             print("-"*104)
+
+            # Save the best model checkpoint
             torch.save(model, "models/proformer-base.bin")
 
+        # Update learning rate
         scheduler.step()
-    
+
     return best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs
 
 if __name__ == "__main__":

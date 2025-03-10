@@ -14,7 +14,7 @@ from typing import Tuple
 # https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
 
 class PositionalEncoding(nn.Module):
-
+    
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -90,7 +90,7 @@ class TransformerModel(nn.Module):
         if self.opt["use_taxonomy"]:
             tax_pe = self.tax_encoder(F.normalize(self.taxonomy[src], 2, dim=0))
             # tax_pe = F.normalize(self.taxonomy[src], 2, dim=0)
-
+        
         src = self.embedding(src) * math.sqrt(self.d_model)
 
         if self.opt["use_taxonomy"]:

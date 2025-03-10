@@ -17,7 +17,7 @@ class Dataloader():
         # removed for excluding timestamp parsing, was true in first model
         # self.df = pd.read_csv(filename, parse_dates=["timestamp"])
         self.df = pd.read_csv(filename)
-
+        print (self.df)
         if self.opt["use_l2_data"]:
             with open('data/level2_dataset_preprocessed.pkl', 'rb') as handle:
                 act_seq_l2 = pickle.load(handle)
