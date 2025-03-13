@@ -1,16 +1,17 @@
-numpy
-pandas
-torch
-tqdm
-scikit-learn
-pandas
-matplotlib
-seaborn
-networkx
-torchtext
-optuna
-torch_geometric
-pm4py
+matplotlib==3.10.1
+networkx==3.1
+numpy==1.26.4
+optuna==4.2.1
+pandas==2.2.3
+pm4py==2.7.13.1
+scikit-learn==1.6.1
+seaborn==0.13.2
+torch==2.3.0
+torch_geometric==2.6.1
+torchtext==0.18.0
+tqdm==4.65.0
+
+
 # torch_sparse --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
 # pyg_lib --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
 # torch_scatter --install-option='-f https://data.pyg.org/whl/torch-2.1.0+cu121.html'
