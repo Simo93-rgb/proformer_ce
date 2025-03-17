@@ -5,6 +5,7 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_geometric.graphgym.register import dataset_dict
 from tqdm import tqdm
 from dataloader import Dataloader
 from proformer import TransformerModel
@@ -14,6 +15,7 @@ import pickle
 from datetime import datetime
 import pandas as pd
 import numpy as np
+import os
 
 """
 This module implements training, evaluation, and execution of the Proformer model
@@ -51,9 +53,22 @@ def parse_params():
     parser.add_argument("--taxonomy_emb_type", type=str, default="laplacian")
     parser.add_argument("--taxonomy_emb_size", type=int, default=16)
 
-#    parser.add_argument("--dataset", type=str, default="data/BPI_Challenge_2012.csv")
-    parser.add_argument("--dataset", type=str, default="data\ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv")
-    parser.add_argument("--taxonomy", type=str, default="data/bpi_taxonomy.csv")
+    # Default dataset and taxonomy files
+    data_dir = "data"
+    dataset_filename = "ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv"
+    taxonomy_filename = "bpi_taxonomy.csv"
+    dataset_file_path = os.path.join(data_dir, dataset_filename)
+    taxonomy_file_path = os.path.join(data_dir, taxonomy_filename)
+    # check if the path is ok
+    if not os.path.exists(dataset_file_path):
+        raise FileNotFoundError(f"The file {dataset_file_path} does not exist. Please check the path and try again.")
+
+    if not os.path.exists(taxonomy_file_path):
+        raise FileNotFoundError(f"The file {taxonomy_file_path} does not exist. Please check the path and try again.")
+
+    #    parser.add_argument("--dataset", type=str, default="data/BPI_Challenge_2012.csv")
+    parser.add_argument("--dataset", type=str, default=dataset_file_path)
+    parser.add_argument("--taxonomy", type=str, default=taxonomy_file_path)
 
     args = parser.parse_args()
     opt = vars(args)
@@ -224,7 +239,7 @@ def main(opt):
     # ------------------------------
 
     # Initialize data loader and create dataset splits
-    loader = Dataloader(opt["dataset"], opt)
+    loader = Dataloader(filename=opt["dataset"], opt=opt)
     loader.get_dataset(opt["test_split_size"])
 
     # Uncomment to enable taxonomy embeddings
@@ -236,7 +251,7 @@ def main(opt):
 
     # Setup optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"])
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1., gamma=opt["gamma_scheduler"])
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=opt["gamma_scheduler"])
     best_val_acc = -float('inf')
 
     # Training loop
@@ -285,7 +300,7 @@ def main(opt):
             test_loss, test_accs = evaluate(model, loader.test_data, loader, opt)
             test_ppl = math.exp(test_loss)
             print(f"| Performance on test: Test ppl: {test_ppl:5.2f} | "
-                  f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}"+(" ")*23+"|")
+                  f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}"+(" ")*21+"|")
             print("-"*104)
 
             # Save the best model checkpoint

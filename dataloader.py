@@ -5,7 +5,11 @@ import torch.nn.functional as F
 import os
 import random
 import pickle
+
+import torchtext
 from torchtext.vocab import build_vocab_from_iterator
+torchtext.disable_torchtext_deprecation_warning()
+
 
 # This code was ispired by the following example:
 # https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
