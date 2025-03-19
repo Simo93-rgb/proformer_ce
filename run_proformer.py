@@ -211,9 +211,9 @@ def main(opt):
     Returns:
         tuple: (best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs)
     """
-    random.seed(datetime.now())
+    random.seed(datetime.now().timestamp())
 
-    if(opt == None):
+    if opt is None:
         print("-- PARSING CMD ARGS --")
         opt = parse_params()
         for k in bpi_params.keys():
@@ -254,6 +254,10 @@ def main(opt):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=opt["gamma_scheduler"])
     best_val_acc = -float('inf')
 
+    # Initialize early stopping variables
+    patience = opt.get("early_stopping_patience", 15)  # Default to 15 if not specified
+    min_delta = opt.get("early_stopping_min_delta", 0.0001)
+    counter = 0
     # Training loop
     for epoch in range(1, opt["epochs"]+1):
 
@@ -280,7 +284,7 @@ def main(opt):
         elapsed = time.time() - epoch_start_time
 
         # Print progress every 10 epochs
-        if((epoch % 10) == 0):
+        if (epoch % 10) == 0:
             print('-' * 104)
             print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
                   f'valid loss {valid_loss:5.2f} | valid ppl {valid_ppl:7.2f} | '
@@ -289,7 +293,9 @@ def main(opt):
             print('-' * 104)
 
         # Save best model based on validation accuracy
-        if (valid_accs[1] > best_val_acc):
+        if (valid_accs[1] > best_val_acc + min_delta):
+            # Model improved
+            counter = 0
             best_train_loss = train_loss
             best_valid_loss = valid_loss
             best_epoch = epoch
@@ -305,7 +311,15 @@ def main(opt):
 
             # Save the best model checkpoint
             torch.save(model, "models/proformer-base.bin")
-
+        else:
+            # No improvement, increment counter
+            counter += 1
+            if epoch % 10 == 0:
+                print(f"| No improvement for {counter} epochs. Best acc@1: {best_val_acc:.4f} |")
+                # Check for early stopping
+        if counter >= patience:
+            print(f"Early stopping triggered after {epoch} epochs without improvement")
+            break
         # Update learning rate
         scheduler.step()
 

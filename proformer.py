@@ -37,18 +37,69 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FeedForward(nn.Module):
+    """
+    FeedForward is a feed-forward neural network layer used in the Transformer model.
+
+    Attributes:
+        linear1 (nn.Linear): First linear transformation layer.
+        dropout (nn.Dropout): Dropout layer after the first linear transformation.
+        linear2 (nn.Linear): Second linear transformation layer.
+    """
+
     def __init__(self, d_model, d_ff, dropout=0.1):
-        super(FeedForward, self).__init__()
+        """
+        Initializes the FeedForward layer.
+
+        Args:
+            d_model (int): Dimension of the input.
+            d_ff (int): Dimension of the feed-forward network.
+            dropout (float): Dropout rate.
+        """
+        super().__init__()
         self.linear1 = nn.Linear(d_model, d_ff)
         self.dropout = nn.Dropout(dropout)
         self.linear2 = nn.Linear(d_ff, d_model)
 
     def forward(self, x):
-        x = self.dropout(F.relu(self.linear1(x)))
-        return self.linear2(x)
+        """
+        Forward pass of the FeedForward layer.
+
+        Args:
+            x (Tensor): Input tensor.
+
+        Returns:
+            Tensor: Output tensor after applying the feed-forward network.
+        """
+        return self.linear2(self.dropout(F.gelu(self.linear1(x))))
 
 class TransformerModel(nn.Module):
+    """
+    TransformerModel is a neural network model based on the Transformer architecture.
+
+    Attributes:
+        last_hidden_states (Tensor): Stores the last hidden states of the model.
+        ntokens (int): Number of tokens in the vocabulary.
+        opt (dict): Dictionary containing model hyperparameters.
+        model_type (str): Type of the model, set to 'Transformer'.
+        pos_encoder (PositionalEncoding): Positional encoding layer.
+        transformer_encoder (TransformerEncoder): Transformer encoder layer.
+        embedding (nn.Embedding): Embedding layer for input tokens.
+        d_model (int): Dimension of the model.
+        pos_emb (nn.Embedding): Positional embedding layer.
+        taxonomy (Tensor, optional): Taxonomy tensor if use_taxonomy is enabled.
+        tax_encoder (nn.Linear, optional): Linear layer for taxonomy encoding.
+        linear (nn.Sequential): Linear layer for output.
+    """
+
     def __init__(self, ntoken, opt, taxonomy=None):
+        """
+        Initializes the TransformerModel.
+
+        Args:
+            ntoken (int): Number of tokens in the vocabulary.
+            opt (dict): Dictionary containing model hyperparameters.
+            taxonomy (Tensor, optional): Taxonomy tensor if use_taxonomy is enabled.
+        """
         super().__init__()
         self.last_hidden_states = None
         self.ntokens = ntoken
@@ -56,7 +107,7 @@ class TransformerModel(nn.Module):
         self.model_type = 'Transformer'
         self.pos_encoder = PositionalEncoding(opt["d_model"], dropout=opt["pos_enc_dropout"], max_len=opt["bptt"])
         encoder_layers = TransformerEncoderLayer(opt["d_model"], opt["nhead"], opt["d_hid"], opt["dropout"],
-                                                 activation="relu", norm_first=True)
+                                                 activation="gelu", norm_first=True)  # Changed to gelu
         self.transformer_encoder = TransformerEncoder(encoder_layers, opt["nlayers"], enable_nested_tensor=True)
         self.embedding = nn.Embedding(ntoken, opt["d_model"])
         self.d_model = opt["d_model"]
@@ -67,26 +118,61 @@ class TransformerModel(nn.Module):
             self.taxonomy = taxonomy
             self.tax_encoder = nn.Linear(taxonomy.size(1), opt["d_model"], bias=False)
 
-        # self.feed_forward = FeedForward(opt["d_model"], opt["d_hid"], opt["dropout"])
-        self.linear = nn.Sequential(nn.Linear(opt["d_model"], ntoken))
+        # Removed redundant feed_forward layer
+        self.norm = nn.LayerNorm(opt["d_model"])  # Added layer norm before final projection
+        self.linear = nn.Linear(opt["d_model"], ntoken)  # Simplified to single Linear layer
         self.init_weights()
+
+
+    # def init_weights(self):
+    #     """
+    #     Initializes the weights of the model.
+    #     """
+    #     initrange = 0.1
+    #     self.embedding.weight.data.uniform_(-initrange, initrange)
+    #     if self.opt["use_taxonomy"]:
+    #         self.tax_encoder.weight.data.uniform_(-initrange, initrange)
+    #     for l in self.linear:
+    #         if isinstance(l, nn.Linear):
+    #             l.bias.data.zero_()
+    #             l.weight.data.uniform_(-initrange, initrange)
 
     def init_weights(self):
         initrange = 0.1
-        self.embedding.weight.data.uniform_(-initrange, initrange)
+        # Use Xavier/Glorot initialization
+        nn.init.xavier_uniform_(self.embedding.weight.data)
         if self.opt["use_taxonomy"]:
-            self.tax_encoder.weight.data.uniform_(-initrange, initrange)
-        for l in self.linear:
-            if isinstance(l, nn.Linear):
-                l.bias.data.zero_()
-                l.weight.data.uniform_(-initrange, initrange)
+            nn.init.xavier_uniform_(self.tax_encoder.weight.data)
+
+        # Initialize linear layer
+        nn.init.xavier_uniform_(self.linear.weight)
+        nn.init.zeros_(self.linear.bias)
 
     def create_masked_attention_matrix(self, sz):
+        """
+        Creates a masked attention matrix.
+
+        Args:
+            sz (int): Size of the attention matrix.
+
+        Returns:
+            Tensor: Masked attention matrix.
+        """
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
     def forward(self, src, src_mask=None):
+        """
+        Forward pass of the model.
+
+        Args:
+            src (Tensor): Input tensor.
+            src_mask (Tensor, optional): Source mask tensor.
+
+        Returns:
+            Tensor: Output tensor.
+        """
         src = self.embedding(src) * math.sqrt(self.d_model)
         if self.opt["use_taxonomy"]:
             tax_pe = self.tax_encoder(F.normalize(self.taxonomy[src], 2, dim=0))
@@ -96,8 +182,10 @@ class TransformerModel(nn.Module):
             src = self.pos_encoder(src)
 
         output = self.transformer_encoder(src, src_mask, is_causal=False)
-        # output = self.feed_forward(output)
         self.last_hidden_states = output.clone()
+
+        # Apply layer norm before final projection
+        output = self.norm(output)
         output = self.linear(output)
 
         return output
