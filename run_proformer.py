@@ -3,10 +3,7 @@ import math
 import random
 import argparse
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.graphgym.register import dataset_dict
-from tqdm import tqdm
 from dataloader import Dataloader
 from proformer import TransformerModel
 from params import bpi_params
@@ -32,26 +29,32 @@ def parse_params():
     """
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--device", type=str, default="cuda:0")
-    parser.add_argument("--test_split_size", type=int, default=5000, help="Number of examples to use for valid and test")
-    parser.add_argument("--pad", action="store_true", help="Pads the sequences to bptt", default=True)
-    parser.add_argument("--bptt", type=int, default=237, help="Max len of sequences")
-    parser.add_argument("--split_actions", action="store_true", default=True, help="Splits multiple action if in one (uses .split('_se_'))")
-    parser.add_argument("--batch_size", type=int, default=2, help="Regulates the batch size")
-    parser.add_argument("--pos_enc_dropout", type=float, default=0.1, help="Regulates dropout in pe")
-    parser.add_argument("--d_model", type=int, default=128)
-    parser.add_argument("--nhead", type=int, default=1)
-    parser.add_argument("--nlayers", type=int, default=3)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--d_hid", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=150)
-    parser.add_argument("--lr", type=float, default=3.)
-    parser.add_argument("--gamma_scheduler", type=float, default=0.97)
-    parser.add_argument("--use_l2_data", action="store_true", default=True, help="Uses data from level 2 dataset")
-    parser.add_argument("--use_taxonomy", action="store_true", default=False, help="Introduces weights based on a taxonomy of the tokens")
-    parser.add_argument("--use_pe", action="store_true", default=False)
-    parser.add_argument("--taxonomy_emb_type", type=str, default="laplacian")
-    parser.add_argument("--taxonomy_emb_size", type=int, default=16)
+    # Add arguments with defaults from bpi_params
+    parser.add_argument("--device", type=str, default=bpi_params.get("device", "cuda:0"))
+    parser.add_argument("--test_split_size", type=int, default=bpi_params.get("test_split_size", 5000), help="Number of examples to use for valid and test")
+    parser.add_argument("--pad", action="store_true", help="Pads the sequences to bptt", default=bpi_params.get("pad", True))
+    parser.add_argument("--bptt", type=int, default=bpi_params.get("bptt", 237), help="Max len of sequences")
+    parser.add_argument("--split_actions", action="store_true", default=bpi_params.get("split_actions", True), help="Splits multiple action if in one (uses .split('_se_'))")
+    parser.add_argument("--batch_size", type=int, default=bpi_params.get("batch_size", 2), help="Regulates the batch size")
+    parser.add_argument("--pos_enc_dropout", type=float, default=bpi_params.get("pos_enc_dropout", 0.1), help="Regulates dropout in pe")
+    parser.add_argument("--d_model", type=int, default=bpi_params.get("d_model", 128))
+    parser.add_argument("--nhead", type=int, default=bpi_params.get("nhead", 1))
+    parser.add_argument("--nlayers", type=int, default=bpi_params.get("nlayers", 3))
+    parser.add_argument("--dropout", type=float, default=bpi_params.get("dropout", 0.1))
+    parser.add_argument("--d_hid", type=int, default=bpi_params.get("d_hid", 128))
+    parser.add_argument("--epochs", type=int, default=bpi_params.get("epochs", 150))
+    parser.add_argument("--lr", type=float, default=bpi_params.get("lr", 3.))
+    parser.add_argument("--gamma_scheduler", type=float, default=bpi_params.get("gamma_scheduler", 0.97))
+    parser.add_argument("--use_l2_data", action="store_true", default=bpi_params.get("use_l2_data", True), help="Uses data from level 2 dataset")
+    parser.add_argument("--use_taxonomy", action="store_true", default=bpi_params.get("use_taxonomy", False), help="Introduces weights based on a taxonomy of the tokens")
+    parser.add_argument("--use_pe", action="store_true", default=bpi_params.get("use_pe", False))
+    parser.add_argument("--taxonomy_emb_type", type=str, default=bpi_params.get("taxonomy_emb_type", "laplacian"))
+    parser.add_argument("--taxonomy_emb_size", type=int, default=bpi_params.get("taxonomy_emb_size", 64))
+    parser.add_argument("--weight_decay", type=float, default=bpi_params.get("weight_decay", 1e-5), help="L2 regularization weight decay")
+    parser.add_argument("--warmup_steps", type=int, default=bpi_params.get("warmup_steps", 4000), help="Number of warmup steps for learning rate scheduler")
+    parser.add_argument("--gradient_clip", type=float, default=bpi_params.get("gradient_clip", 1.0), help="Gradient clipping value")
+    parser.add_argument("--early_stopping_patience", type=int, default=bpi_params.get("early_stopping_patience", 15), help="Patience for early stopping")
+    parser.add_argument("--early_stopping_min_delta", type=float, default=bpi_params.get("early_stopping_min_delta", 0.0001), help="Minimum delta for early stopping")
 
     # Default dataset and taxonomy files
     data_dir = "data"
@@ -216,8 +219,6 @@ def main(opt):
     if opt is None:
         print("-- PARSING CMD ARGS --")
         opt = parse_params()
-        for k in bpi_params.keys():
-            opt[k] = bpi_params[k]
     print(opt)
 
     # -- Add optional params here --
@@ -243,11 +244,13 @@ def main(opt):
     loader.get_dataset(opt["test_split_size"])
 
     # Uncomment to enable taxonomy embeddings
-    # tax = TaxonomyEmbedding(loader.vocab, opt["taxonomy"], opt)
-    # model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
-
-    # Initialize model
-    model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
+    tax = TaxonomyEmbedding(loader.vocab, opt["taxonomy"], opt)
+    if opt["use_taxonomy"]:
+        # Initialize model with taxonomy
+        model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
+    else:
+        # Initialize model
+        model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
 
     # Setup optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"])
@@ -326,5 +329,6 @@ def main(opt):
     return best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs
 
 if __name__ == "__main__":
-    best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs = main(opt=None)
+    opt = parse_params()
+    best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs = main(opt=opt)
     print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")

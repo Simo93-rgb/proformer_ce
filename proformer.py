@@ -138,14 +138,13 @@ class TransformerModel(nn.Module):
     #             l.weight.data.uniform_(-initrange, initrange)
 
     def init_weights(self):
-        initrange = 0.1
-        # Use Xavier/Glorot initialization
-        nn.init.xavier_uniform_(self.embedding.weight.data)
+        # Use He initialization
+        nn.init.kaiming_uniform_(self.embedding.weight.data, nonlinearity='relu')
         if self.opt["use_taxonomy"]:
-            nn.init.xavier_uniform_(self.tax_encoder.weight.data)
+            nn.init.kaiming_uniform_(self.tax_encoder.weight.data, nonlinearity='relu')
 
         # Initialize linear layer
-        nn.init.xavier_uniform_(self.linear.weight)
+        nn.init.kaiming_uniform_(self.linear.weight, nonlinearity='relu')
         nn.init.zeros_(self.linear.bias)
 
     def create_masked_attention_matrix(self, sz):
@@ -175,6 +174,7 @@ class TransformerModel(nn.Module):
         """
         src = self.embedding(src) * math.sqrt(self.d_model)
         if self.opt["use_taxonomy"]:
+            src = src.long()
             tax_pe = self.tax_encoder(F.normalize(self.taxonomy[src], 2, dim=0))
             src = (src + F.dropout(tax_pe, 0.01))
 
