@@ -114,7 +114,7 @@ class TransformerModel(nn.Module):
 
         self.pos_emb = nn.Embedding(opt["bptt"], opt["d_model"])
 
-        if opt["use_taxonomy"]:
+        if opt["use_taxonomy"] and taxonomy is not None:
             self.taxonomy = taxonomy
             self.tax_encoder = nn.Linear(taxonomy.size(1), opt["d_model"], bias=False)
 
@@ -172,20 +172,47 @@ class TransformerModel(nn.Module):
         Returns:
             Tensor: Output tensor.
         """
-        src = self.embedding(src) * math.sqrt(self.d_model)
-        if self.opt["use_taxonomy"]:
-            src = src.long()
-            tax_pe = self.tax_encoder(F.normalize(self.taxonomy[src], 2, dim=0))
-            src = (src + F.dropout(tax_pe, 0.01))
 
+        # Calculate token embeddings and scale
+        x = self.embedding(src) * math.sqrt(self.d_model)
+
+        # Add taxonomy embeddings if enabled
+        if self.opt["use_taxonomy"] and self.taxonomy is not None:
+            # Retrieve taxonomy embeddings corresponding to tokens in src
+            # taxonomy[src] returns a tensor of size [seq_len, batch_size, taxonomy_emb_size]
+            tax_emb = self.taxonomy[src]
+            # Normalize and project taxonomy embeddings to d_model
+            tax_pe = self.tax_encoder(F.normalize(tax_emb, p=2, dim=-1))
+            x = x + F.dropout(tax_pe, 0.01)
+
+        # Apply positional encoding if enabled
         if self.opt["use_pe"]:
-            src = self.pos_encoder(src)
+            x = self.pos_encoder(x)
 
-        output = self.transformer_encoder(src, src_mask, is_causal=False)
+        # Pass through transformer encoder
+        output = self.transformer_encoder(x, src_mask, is_causal=False)
         self.last_hidden_states = output.clone()
-
-        # Apply layer norm before final projection
         output = self.norm(output)
         output = self.linear(output)
-
         return output
+
+
+
+        '''OLD CODE: forward() method'''
+        # src = self.embedding(src) * math.sqrt(self.d_model)
+        # if self.opt["use_taxonomy"]:
+        #     src = src.long()
+        #     tax_pe = self.tax_encoder(F.normalize(self.taxonomy[src], 2, dim=0))
+        #     src = (src + F.dropout(tax_pe, 0.01))
+        #
+        # if self.opt["use_pe"]:
+        #     src = self.pos_encoder(src)
+        #
+        # output = self.transformer_encoder(src, src_mask, is_causal=False)
+        # self.last_hidden_states = output.clone()
+        #
+        # # Apply layer norm before final projection
+        # output = self.norm(output)
+        # output = self.linear(output)
+
+        # return output

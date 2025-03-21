@@ -52,7 +52,7 @@ bpi_params = {
     'warmup_steps': 4000,  # Add warmup for stable initial training
     'nhead': 8,        # Current value is appropriate
     'nlayers': 6,      # Current value is good
-    'taxonomy_emb_size': 64,  # Increase taxonomic representation
+    'taxonomy_emb_size': 128,  # Increase taxonomic representation
     'taxonomy_emb_type': 'laplacian',
     'use_pe': True,    # Enable proper positional encoding
     'weight_decay': 1e-5,  # Add L2 regularization
@@ -62,7 +62,7 @@ bpi_params = {
     "pad": True,
     "test_split_size": 5000,
     "pos_enc_dropout": 0.1,
-    # "use_taxonomy": True,  # Enable if taxonomy data is available
+    "use_taxonomy": True,  # Enable if taxonomy data is available
     "use_l2_data": False,
     "gradient_clip": 1.0,  # Add gradient clipping for stability
         # Early stopping parameters
