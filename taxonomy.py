@@ -121,7 +121,7 @@ class Taxonomy():
         return self.tax_weights[src]
 
 
-class TaxonomyEmbedding():
+class TaxonomyEmbedding:
     """
     Generates taxonomy embeddings based on a taxonomy graph.
 

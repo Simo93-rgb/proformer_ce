@@ -31,7 +31,7 @@ def parse_params():
 
     # Add arguments with defaults from bpi_params
     parser.add_argument("--device", type=str, default=bpi_params.get("device", "cuda:0"))
-    parser.add_argument("--test_split_size", type=int, default=bpi_params.get("test_split_size", 5000), help="Number of examples to use for valid and test")
+    parser.add_argument("--test_split_size", type=int, default=bpi_params.get("test_split_size", 1000), help="Number of examples to use for valid and test")
     parser.add_argument("--pad", action="store_true", help="Pads the sequences to bptt", default=bpi_params.get("pad", True))
     parser.add_argument("--bptt", type=int, default=bpi_params.get("bptt", 237), help="Max len of sequences")
     parser.add_argument("--split_actions", action="store_true", default=bpi_params.get("split_actions", True), help="Splits multiple action if in one (uses .split('_se_'))")
@@ -58,7 +58,7 @@ def parse_params():
 
     # Default dataset and taxonomy files
     data_dir = "data"
-    dataset_filename = "ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv"
+    dataset_filename = "finale_preprocessed.csv"
     taxonomy_filename = "bpi_taxonomy.csv"
     dataset_file_path = os.path.join(data_dir, dataset_filename)
     taxonomy_file_path = os.path.join(data_dir, taxonomy_filename)
@@ -241,11 +241,14 @@ def main(opt):
 
     # Initialize data loader and create dataset splits
     loader = Dataloader(filename=opt["dataset"], opt=opt)
-    loader.get_dataset(opt["test_split_size"])
+    loader.get_dataset(num_test_ex=opt["test_split_size"])
 
-    # Uncomment to enable taxonomy embeddings
-    tax = TaxonomyEmbedding(loader.vocab, opt["taxonomy"], opt)
     if opt["use_taxonomy"]:
+        tax = TaxonomyEmbedding(
+            vocab=loader.vocab,
+            filename=opt["taxonomy"],
+            opt=opt
+        )
         # Initialize model with taxonomy
         model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
     else:
@@ -259,11 +262,10 @@ def main(opt):
 
     # Initialize early stopping variables
     patience = opt.get("early_stopping_patience", 15)  # Default to 15 if not specified
-    min_delta = opt.get("early_stopping_min_delta", 0.0001)
+    min_delta = opt.get("early_stopping_min_delta", 0.0001) # Default to 0.0001 if not specified
     counter = 0
     # Training loop
     for epoch in range(1, opt["epochs"]+1):
-
         epoch_start_time = time.time()
 
         # Train for one epoch
@@ -296,7 +298,7 @@ def main(opt):
             print('-' * 104)
 
         # Save best model based on validation accuracy
-        if (valid_accs[1] > best_val_acc + min_delta):
+        if valid_accs[1] > best_val_acc + min_delta:
             # Model improved
             counter = 0
             best_train_loss = train_loss
@@ -309,7 +311,7 @@ def main(opt):
             test_loss, test_accs = evaluate(model, loader.test_data, loader, opt)
             test_ppl = math.exp(test_loss)
             print(f"| Performance on test: Test ppl: {test_ppl:5.2f} | "
-                  f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}"+(" ")*21+"|")
+                  f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}" + " " * 21 + "|")
             print("-"*104)
 
             # Save the best model checkpoint
@@ -330,5 +332,6 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_params()
+    opt["dataset"] = "data/aggregated_case_details.csv"
     best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs = main(opt=opt)
     print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")

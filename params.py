@@ -43,26 +43,26 @@
 # }
 
 bpi_params = {
-    'batch_size': 64,  # Increase for better gradient estimation
+    'batch_size': 128,  # Increase for better gradient estimation
     'd_hid': 1024,     # Standard ratio: 4x d_model
     'd_model': 256,    # Keep current size
     'dropout': 0.3,    # Slightly higher to prevent overfitting
     'gamma_scheduler': 0.98,  # Slower decay for better convergence
     'lr': 0.0005,      # Higher learning rate with warmup
-    'warmup_steps': 4000,  # Add warmup for stable initial training
-    'nhead': 8,        # Current value is appropriate
-    'nlayers': 6,      # Current value is good
-    'taxonomy_emb_size': 128,  # Increase taxonomic representation
+    'warmup_steps': 6000,  # Add warmup for stable initial training
+    'nhead': 16,        # Current value is appropriate
+    'nlayers': 8,      # Current value is good
+    'taxonomy_emb_size': 256,  # Increase taxonomic representation
     'taxonomy_emb_type': 'laplacian',
     'use_pe': True,    # Enable proper positional encoding
     'weight_decay': 1e-5,  # Add L2 regularization
-    "epochs": 200,     # Train longer with early stopping
+    "epochs": 300,     # Train longer with early stopping
     "bptt": 237,
     "split_actions": True,
     "pad": True,
-    "test_split_size": 5000,
+    "test_split_size": 1000,
     "pos_enc_dropout": 0.1,
-    "use_taxonomy": True,  # Enable if taxonomy data is available
+    "use_taxonomy": False,  # Enable if taxonomy data is available
     "use_l2_data": False,
     "gradient_clip": 1.0,  # Add gradient clipping for stability
         # Early stopping parameters

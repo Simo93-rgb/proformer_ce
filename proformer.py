@@ -118,7 +118,6 @@ class TransformerModel(nn.Module):
             self.taxonomy = taxonomy
             self.tax_encoder = nn.Linear(taxonomy.size(1), opt["d_model"], bias=False)
 
-        # Removed redundant feed_forward layer
         self.norm = nn.LayerNorm(opt["d_model"])  # Added layer norm before final projection
         self.linear = nn.Linear(opt["d_model"], ntoken)  # Simplified to single Linear layer
         self.init_weights()
@@ -199,6 +198,20 @@ class TransformerModel(nn.Module):
 
 
         '''OLD CODE: forward() method'''
+
+        # def forward(self, src, src_mask=None):
+        #     """
+        #     Forward pass of the model.
+        #
+        #     Args:
+        #         src (Tensor): Input tensor.
+        #         src_mask (Tensor, optional): Source mask tensor.
+        #
+        #     Returns:
+        #         Tensor: Output tensor.
+        #     """
+        #
+        #     # Calculate token embeddings and scale
         # src = self.embedding(src) * math.sqrt(self.d_model)
         # if self.opt["use_taxonomy"]:
         #     src = src.long()

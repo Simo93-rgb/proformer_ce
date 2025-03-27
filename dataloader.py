@@ -17,6 +17,10 @@ torchtext.disable_torchtext_deprecation_warning()
 
 class Dataloader():
     def __init__(self, filename, opt):
+        self.vocab = None
+        self.test_data = None
+        self.valid_data = None
+        self.train_data = None
         self.opt = opt
         # removed for excluding timestamp parsing, was true in first model
         # self.df = pd.read_csv(filename, parse_dates=["timestamp"])
@@ -65,22 +69,57 @@ class Dataloader():
         for act in act_seq:
             yield act
 
-
     def batchify(self, data, bsz=80):
-        """Divides the data into bsz separate sequences"""
+        """
+        Divides the data into bsz separate sequences.
 
+        Args:
+            data (torch.Tensor): The input data tensor to be divided into batches.
+            bsz (int, optional): The batch size, i.e., the number of sequences to divide the data into. Defaults to 80.
+
+        Returns:
+            torch.Tensor: A tensor of shape (seq_len, bsz) where seq_len is the length of each batch,
+                          transposed and moved to the device specified in self.opt["device"].
+        """
+
+        # Calculate the length of each batch by dividing the total number of elements by the batch size
         seq_len = data.size(0) // bsz
+
+        # Trim the data tensor to ensure its length is an exact multiple of the batch size
         data = data[:seq_len * bsz]
+
+        # Reshape the trimmed data tensor into a 2D tensor of shape (bsz, seq_len) and transpose it
         data = data.view(bsz, seq_len).t().contiguous()
-        
+
+        # Move the reshaped and transposed data tensor to the specified device and return it
         return data.to(self.opt["device"])
 
-
     def data_process(self, raw_text_iter, vocab):
-        """Converts raw text into a flat Tensor."""
+        """
+        Processes raw text data into a concatenated tensor of token indices.
+
+        Args:
+            raw_text_iter (iterable): An iterable of raw text data.
+            vocab (torchtext.vocab.Vocab): A vocabulary object that maps tokens to indices.
+
+        Returns:
+            torch.Tensor: A concatenated tensor of token indices.
+
+        Raises:
+            ValueError: If no valid tokens are found for concatenation.
+        """
+        # Convert each item in raw_text_iter into a tensor of token indices using the provided vocabulary
         data = [torch.tensor(vocab([item]), dtype=torch.long) for item in raw_text_iter]
 
-        return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
+        # Filter out any empty tensors from the list
+        non_empty_tensors = list(filter(lambda t: t.numel() > 0, data))
+
+        # Raise an error if no valid tokens are found for concatenation
+        if not non_empty_tensors:
+            raise ValueError("No valid tokens found for concatenation. Check your data and vocabulary.")
+
+        # Concatenate the non-empty tensors into a single tensor and return it
+        return torch.cat(non_empty_tensors)
 
 
     def get_batch(self, source, i):
@@ -159,7 +198,7 @@ class Dataloader():
         # print(len(act_seq), num_test_ex)
         # print(len(train_act_seq),len(valid_act_seq), len(test_act_seq))
 
-        if vocab == None:
+        if vocab is None:
             vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
             vocab.set_default_index(vocab['<unk>'])
 
