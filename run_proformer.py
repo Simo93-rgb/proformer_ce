@@ -243,6 +243,10 @@ def main(opt):
     loader = Dataloader(filename=opt["dataset"], opt=opt)
     loader.get_dataset(num_test_ex=opt["test_split_size"])
 
+    # Save the vocabulary
+    with open("models/vocab.pkl", "wb") as f:
+        pickle.dump(loader.vocab, f)
+
     if opt["use_taxonomy"]:
         tax = TaxonomyEmbedding(
             vocab=loader.vocab,
@@ -253,7 +257,8 @@ def main(opt):
         model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
     else:
         # Initialize model
-        model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
+        vocab_dim = len(loader.vocab)
+        model = TransformerModel(vocab_dim, opt).to(opt["device"])
 
     # Setup optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"])

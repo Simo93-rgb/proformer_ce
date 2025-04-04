@@ -131,90 +131,52 @@ class Dataloader():
 
 
     def get_dataset(self, num_test_ex=1000):
-
-        act_seq = self.df.groupby("case_id").apply(lambda x : self.process_seq(x.activity.to_list()))
+        act_seq = self.df.groupby("case_id").apply(lambda x: self.process_seq(x.activity.to_list()))
         act_seq = act_seq.to_list()
         random.shuffle(act_seq)
 
         if self.opt["use_l2_data"]:
-            act_seq = act_seq+self.act_seq_l2
+            act_seq = act_seq + self.act_seq_l2
 
         train_act_seq = act_seq[num_test_ex:]
-        #valid_act_seq = act_seq[:num_test_ex-500]
-        valid_act_seq = act_seq[:num_test_ex-(num_test_ex//2)]
+        valid_act_seq = act_seq[:num_test_ex - (num_test_ex // 2)]
+        test_act_seq = act_seq[num_test_ex - (num_test_ex // 2):num_test_ex]
 
-        # -- testset is currently NOT separate -- #
-        # test_act_seq = act_seq[num_test_ex-500:num_test_ex]
-        test_act_seq = act_seq[num_test_ex-(num_test_ex//2):num_test_ex]
-        
-        # print(len(act_seq), num_test_ex)
-        # print(len(train_act_seq),len(valid_act_seq), len(test_act_seq))
-
+        # Costruisci il vocabolario
         vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
         vocab.set_default_index(vocab['<unk>'])
 
+        # Salva il vocabolario in un file
+        with open("data/vocab.txt", "w") as f:
+            for token in vocab.get_itos():
+                f.write(f"{token}\n")
+
+        # Prepara i dati
         train_raw_data = [item for sublist in train_act_seq for item in sublist]
         valid_raw_data = [item for sublist in valid_act_seq for item in sublist]
         test_raw_data = [item for sublist in test_act_seq for item in sublist]
 
-        # batch size param is not batchsize but is num_exmp / batch_size (inverse of batch size) - should be fixed
         train_data = self.batchify(self.data_process(train_raw_data, vocab), bsz=len(train_act_seq) // self.opt["batch_size"])
         valid_data = self.batchify(self.data_process(valid_raw_data, vocab), bsz=len(valid_act_seq) // self.opt["batch_size"])
         test_data = self.batchify(self.data_process(test_raw_data, vocab), bsz=len(test_act_seq) // self.opt["batch_size"])
-        
+
         self.train_data = train_data
         self.valid_data = valid_data
         self.test_data = test_data
         self.vocab = vocab
 
         return vocab, train_data, valid_data, test_data
-    
-    def get_clf_dataset(self, vocab=None, num_test_ex=1000):
-
-        act_seq = self.df.groupby("case_id").apply(lambda x : self.process_seq(x.activity.to_list()))
-        act_seq = act_seq.to_list()
-        
-        # assumes that the class of the sequence is in a "class" column
-        lab_seq = self.df["class"]
-        all_data = list(zip(act_seq, lab_seq))
-        random.shuffle(all_data)
-        act_seq, lab_seq = zip(*all_data)
 
 
-        if self.opt["use_l2_data"]:
-            act_seq = act_seq+self.act_seq_l2
+    def preprocess_trace(self, trace):
+        """
+        Preprocess a single trace for classification.
 
-        train_act_seq = act_seq[num_test_ex:]
-        valid_act_seq = act_seq[:num_test_ex-8]
+        Args:
+            trace (list): List of events in the trace.
 
-        # -- testset is currently NOT separate -- #
-        test_act_seq = act_seq[num_test_ex-8:num_test_ex]
-
-        # -- Splitting classification labels -- #
-        train_lab_seq = lab_seq[num_test_ex:]
-        valid_lab_seq = lab_seq[:num_test_ex-8]
-        test_lab_seq = lab_seq[num_test_ex-8:num_test_ex]
-        
-        # print(len(act_seq), num_test_ex)
-        # print(len(train_act_seq),len(valid_act_seq), len(test_act_seq))
-
-        if vocab is None:
-            vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
-            vocab.set_default_index(vocab['<unk>'])
-
-        train_raw_data = [item for sublist in train_act_seq for item in sublist]
-        valid_raw_data = [item for sublist in valid_act_seq for item in sublist]
-        test_raw_data = [item for sublist in test_act_seq for item in sublist]
-
-        # batch size param is not batchsize but is num_exmp / batch_size (inverse of batch size) - should be fixed
-        train_data = self.batchify(self.data_process(train_raw_data, vocab), bsz=len(train_act_seq) // self.opt["batch_size"])
-        valid_data = self.batchify(self.data_process(valid_raw_data, vocab), bsz=len(valid_act_seq) // self.opt["batch_size"])
-        test_data = self.batchify(self.data_process(test_raw_data, vocab), bsz=len(test_act_seq) // self.opt["batch_size"])
-        
-        self.train_data = train_data
-        self.valid_data = valid_data
-        self.test_data = test_data
-        self.vocab = vocab
-
-        return vocab, train_data, valid_data, test_data,\
-               train_lab_seq, valid_lab_seq, test_lab_seq
+        Returns:
+            torch.Tensor: Preprocessed trace tensor.
+        """
+        indices = [self.vocab.get(event, self.vocab["<unk>"]) for event in trace]
+        return torch.tensor(indices, dtype=torch.long)

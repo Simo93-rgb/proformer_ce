@@ -1,41 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pandas as pd
 from dataloader import Dataloader
 from proformer import TransformerModel
 from params import bpi_params
 from run_proformer import parse_params
-# Initialize loader, model, and opt
-print("-- PARSING CMD ARGS --")
-opt = parse_params()
-for k in bpi_params.keys():
-    opt[k] = bpi_params[k]
-print(opt)
-loader = Dataloader(filename=opt["dataset"], opt=opt)
-model = TransformerModel(len(loader.vocab), opt).to(opt["device"])
+from taxonomy import TaxonomyEmbedding
 
-# Carica il vocabolario e i dataset
-vocab, dtrain, dval, dtest = loader.get_dataset(num_test_ex=1000)
-cls1, cls2 = vocab.get_stoi()["1"], vocab.get_stoi()["2"]
-
-# Recupera un batch di esempi
-data, targets = loader.get_batch(loader.test_data, 0)
-attn_mask = model.create_masked_attention_matrix(data.size(0)).to(opt["device"])
-
-# Inferenza sul modello pre-trained
-with torch.no_grad():
-    output = model(data, attn_mask)
-    output_flat = output.view(-1, model.ntokens)
-
-# Crea una maschera dove i target sono equivalenti al token classe
-cls_mask = (targets == cls1) | (targets == cls2)
-targets = targets[cls_mask]
-output_flat = output_flat[cls_mask, :]
-
-# Salva gli embedding relativi alla classe
-class_embeddings = model.last_hidden_states.view(-1, 64)[cls_mask].view(-1, 1, 64)
-
-# Definisci un semplice MLP per la classificazione
+# Definizione del classificatore MLP
 class MLPClassifier(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(MLPClassifier, self).__init__()
@@ -47,31 +20,80 @@ class MLPClassifier(nn.Module):
         x = self.fc2(x)
         return x
 
-# Ipotizziamo che gli embedding abbiano dimensione 64
-input_dim = 64
-hidden_dim = 32
-output_dim = 2  # Numero di classi
+def load_model_and_hidden_states(model_path, hidden_states_path):
+    """
+    Carica il modello Proformer e gli hidden states salvati.
 
-# Inizializza il classificatore
-classifier = MLPClassifier(input_dim, hidden_dim, output_dim).to(opt["device"])
+    Args:
+        model_path (str): Percorso del file del modello salvato.
+        hidden_states_path (str): Percorso del file CSV degli hidden states.
 
-# Definisci l'ottimizzatore e la funzione di perdita
-optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
-criterion = nn.CrossEntropyLoss()
+    Returns:
+        model (TransformerModel): Modello Proformer caricato.
+        hidden_states (torch.Tensor): Hidden states caricati come tensore.
+    """
+    # Carica il modello Proformer salvato
+    model = torch.load(model_path)
+    model.eval()  # Imposta il modello in modalità di valutazione
 
-# Esempio di training loop per il classificatore
-for epoch in range(10):  # Numero di epoche
-    classifier.train()
-    optimizer.zero_grad()
-    outputs = classifier(class_embeddings)
-    loss = criterion(outputs, targets)
-    loss.backward()
-    optimizer.step()
-    print(f'Epoch {epoch+1}, Loss: {loss.item()}')
+    # Carica gli hidden states dal file CSV
+    hidden_states_df = pd.read_csv(hidden_states_path, index_col=0)
+    hidden_states = torch.tensor(hidden_states_df.values, dtype=torch.float32)
 
-# Inferenza con il classificatore addestrato
-classifier.eval()
-with torch.no_grad():
-    outputs = classifier(class_embeddings)
-    _, predicted = torch.max(outputs, 1)
-    print(f'Predicted classes: {predicted}')
+    return model, hidden_states
+
+def classify(hidden_states, classifier, device):
+    """
+    Classifica gli hidden states utilizzando il classificatore MLP.
+
+    Args:
+        hidden_states (torch.Tensor): Hidden states da classificare.
+        classifier (MLPClassifier): Modello classificatore.
+        device (torch.device): Dispositivo su cui eseguire il calcolo.
+
+    Returns:
+        torch.Tensor: Predizioni delle classi.
+    """
+    hidden_states = hidden_states.to(device)
+    classifier.eval()
+    with torch.no_grad():
+        outputs = classifier(hidden_states)
+        _, predicted = torch.max(outputs, 1)
+    return predicted
+
+if __name__ == "__main__":
+    # Percorsi dei file
+    model_path = "models/proformer-base.bin"
+    hidden_states_path = "models/hidden_states.csv"
+
+    # Carica il modello Proformer e gli hidden states
+    print("Caricamento del modello Proformer e degli hidden states...")
+    model, hidden_states = load_model_and_hidden_states(model_path, hidden_states_path)
+
+    # Determina automaticamente la dimensione di input
+    input_dim = hidden_states.shape[1]  # Dimensione degli hidden states
+    hidden_dim = 128  # Dimensione del livello nascosto del classificatore
+    output_dim = 2   # Numero di classi
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Inizializza il classificatore
+    classifier = MLPClassifier(input_dim, hidden_dim, output_dim).to(device)
+
+    # Carica i pesi del classificatore (se disponibili)
+    classifier_weights_path = "models/classifier_weights.pth"
+    try:
+        classifier.load_state_dict(torch.load(classifier_weights_path))
+        print("Pesi del classificatore caricati con successo.")
+    except FileNotFoundError:
+        print("Pesi del classificatore non trovati. Assicurati di addestrare il classificatore prima di usarlo.")
+
+    # Classifica gli hidden states
+    print("Classificazione degli hidden states...")
+    predictions = classify(hidden_states, classifier, device)
+
+    # Stampa le predizioni
+    print(f"Predizioni delle classi: {predictions.tolist()}")
+    # Salva le predizioni in un file CSV
+    predictions_df = pd.DataFrame(predictions.cpu().numpy(), columns=["Predicted Class"])
+    predictions_df.to_csv("models/predictions.csv", index=False)
+    print("Predizioni salvate in 'models/predictions.csv'.")
