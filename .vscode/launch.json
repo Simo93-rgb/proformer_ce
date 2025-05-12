@@ -12,5 +12,20 @@
             "console": "integratedTerminal",
             "python": "/home/simon/miniconda3/envs/proformer_ce/bin/python" // Percorso dell'interprete Python del tuo ambiente Conda
         }
-    ]
+    ],
+        // Forza l'esecuzione delle estensioni (come GitHub Copilot) sull'host Windows anche quando sei in WSL
+    "remote.extensionKind": {
+        "github.copilot": [
+        "ui"
+        ]
+    },
+
+    // Abilita il salvataggio automatico dei file
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+
+    // Assicura che Copilot sia abilitato
+    "github.copilot.enable": {
+        "*": true
+    }
 }

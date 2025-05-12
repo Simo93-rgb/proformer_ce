@@ -4,7 +4,7 @@ import random
 import argparse
 import torch
 import torch.nn.functional as F
-from dataloader import Dataloader
+from dataloader2 import Dataloader
 from proformer import TransformerModel
 from params import bpi_params
 from taxonomy import Taxonomy, TaxonomyEmbedding
@@ -204,7 +204,7 @@ def evaluate(model, eval_data, loader, opt):
     return loss, accs
 
 
-def main(opt):
+def main(opt=None, load_vocab=False):
     """
     Main function to train and evaluate the Proformer model.
 
@@ -238,6 +238,7 @@ def main(opt):
     # opt["taxonomy_emb_size"] = 8
     #
     # ------------------------------
+
 
     # Initialize data loader and create dataset splits
     loader = Dataloader(filename=opt["dataset"], opt=opt)
@@ -337,6 +338,8 @@ def main(opt):
 
 if __name__ == "__main__":
     opt = parse_params()
-    opt["dataset"] = "data/aggregated_case_details.csv"
+    # opt["dataset"] = "data/aggregated_case_tuple.csv"
+    # opt["dataset"] = "data/aggregated_case_detailed.csv"
+    opt["dataset"] = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
     best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs = main(opt=opt)
     print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")

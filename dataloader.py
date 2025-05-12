@@ -130,7 +130,7 @@ class Dataloader():
         return data, target
 
 
-    def get_dataset(self, num_test_ex=1000):
+    def get_dataset(self, num_test_ex=1000, vocab = None, debugging=False):
         act_seq = self.df.groupby("case_id").apply(lambda x: self.process_seq(x.activity.to_list()))
         act_seq = act_seq.to_list()
         random.shuffle(act_seq)
@@ -142,14 +142,18 @@ class Dataloader():
         valid_act_seq = act_seq[:num_test_ex - (num_test_ex // 2)]
         test_act_seq = act_seq[num_test_ex - (num_test_ex // 2):num_test_ex]
 
-        # Costruisci il vocabolario
-        vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
-        vocab.set_default_index(vocab['<unk>'])
+        # Se il vocabolario non è fornito, costruiscilo
+        if vocab is None:
+            # Costruisci il vocabolario
+            vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
+            vocab.set_default_index(vocab['<unk>'])
 
-        # Salva il vocabolario in un file
-        with open("data/vocab.txt", "w") as f:
-            for token in vocab.get_itos():
-                f.write(f"{token}\n")
+
+        # Salva il vocabolario in un file per debugging
+        if debugging:
+            with open("data/vocab.txt", "w") as f:
+                for token in vocab.get_itos():
+                    f.write(f"{token}\n")
 
         # Prepara i dati
         train_raw_data = [item for sublist in train_act_seq for item in sublist]

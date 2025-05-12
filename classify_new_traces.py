@@ -1,3 +1,5 @@
+import ast
+
 import torch
 import pandas as pd
 import pickle
@@ -26,8 +28,10 @@ def classify_new_traces(model_path, vocab_path, dataset_path, output_path, opt):
 
     # Load the new dataset
     df = pd.read_csv(dataset_path)
-    traces = df.iloc[:, 2].str.split(",")  # Assuming the second column contains the traces
 
+
+    # Applica il parsing delle attività
+    traces = df.iloc[:, 1].apply(lambda x: [action[0] for action in ast.literal_eval(x) if isinstance(action, tuple)])
     predictions = []
     with torch.no_grad():
         for trace in traces:
@@ -56,7 +60,7 @@ if __name__ == "__main__":
     classify_new_traces(
         model_path="models/proformer-base.bin",
         vocab_path="models/vocab.pkl",
-        dataset_path="data/aggregated_case_detailed_to_classify.csv",
+        dataset_path="data/aggregated_case_tuple_to_classify.csv",
         output_path="data/classification_results.csv",
         opt=opt
     )

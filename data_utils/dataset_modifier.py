@@ -3,6 +3,9 @@ import xml.etree.ElementTree as ET
 import csv
 import os
 from datetime import datetime
+import csv
+import re
+import ast
 
 def convert_timestamps(input_csv, output_csv):
     """
@@ -50,18 +53,34 @@ def aggregate_case_details(input_csv, output_csv):
     # Sort by case_id and timestamp so that aggregated timestamps and actions remain in order
     df_sorted = df.sort_values(by=['case_id', 'timestamp'])
 
-    # Define a helper function to format timestamps uniformly
-    def format_timestamps(ts):
-        return ','.join(ts.dropna().apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S%z')))
-
-    # Aggregate timestamps and activity columns; for class, select the first non-null instance
-    aggregated = df_sorted.groupby('case_id').agg({
-        'timestamp': format_timestamps,
-        'activity': lambda acts: ','.join(acts.dropna()),
-    }).reset_index()
-
-    # Save the aggregated data to CSV
-    aggregated.to_csv(output_csv, index=False)
+    # Process each case individually to ensure timestamps and activities match
+    aggregated_data = []
+    for case_id, group in df_sorted.groupby('case_id'):
+        timestamps = []
+        activities = []
+        
+        for _, row in group.iterrows():
+            # Only include valid pairs - both activity and timestamp must be present
+            if pd.notna(row['activity']):
+                activities.append(row['activity'])
+                
+                # Format timestamp if available, otherwise use placeholder
+                if pd.notna(row['timestamp']):
+                    timestamps.append(row['timestamp'].strftime('%Y-%m-%d %H:%M:%S%z'))
+                else:
+                    timestamps.append("Unknown")  # Placeholder for missing timestamps
+        
+        # Create entry for this case
+        aggregated_data.append({
+            'case_id': case_id,
+            'timestamp': ','.join(timestamps),
+            'activity': ','.join(activities)
+        })
+    
+    # Convert to DataFrame and save
+    aggregated_df = pd.DataFrame(aggregated_data)
+    aggregated_df.to_csv(output_csv, index=False)
+    print(f"Successfully aggregated {len(aggregated_data)} cases to {output_csv}")
 
 
 def add_class_column(input_csv, output_csv):
@@ -333,14 +352,56 @@ def extract_patient_data(xes_file_path, output_csv_path):
                 if elem.tag in ['string', 'int']:
                     print(f"  {elem.tag}: {elem.attrib}")
 
+
+def escape_inner_apostrophes_regex(s):
+    def replacer(match):
+        inner = match.group(1)
+        escaped = inner.replace("'", "\\'")
+        return f"'{escaped}'"
+    return re.sub(r"'([^']*)'", replacer, s)
+
+def escape_inner_apostrophes():
+    # Apri file input e output
+    with open('../data/aggregated_case_tuple.csv', newline='', encoding='utf-8') as infile, \
+         open('aggregated_case_tuple_edited.csv', mode='w', newline='', encoding='utf-8') as outfile:
+
+        reader = csv.reader(infile)
+        writer = csv.writer(outfile)
+
+        for row in reader:
+            # Verifica che ci sia almeno una seconda colonna
+            if len(row) < 2:
+                writer.writerow(row)
+                continue
+
+            original_id = row[0]
+            raw_data = row[1]
+
+            fixed_data = escape_inner_apostrophes_regex(raw_data)
+
+            try:
+                parsed = ast.literal_eval(f"[{fixed_data}]")  # metto tra [] per parse sicuro
+            except Exception as e:
+                print(f"Errore nella riga con ID {original_id}: {e}")
+                writer.writerow([original_id, 'ERRORE', row[1]])
+                continue
+
+            # Scrivi nel nuovo CSV: ID + lista interpretata + (opzionalmente) terza colonna se esiste
+            output_row = [original_id, parsed]
+            if len(row) > 2:
+                output_row.append(row[2])
+
+            writer.writerow(output_row)
+
 if __name__ == "__main__":
     # xes_file = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.xes"
     # csv_file = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv"
-    # csv_file_edited = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
-    # output_csv = "data/aggregated_case_2.csv"
+    # csv_file_edited = "data/ALL_20DRG_2022_2023_CLASS_Duratio.csv"
+    # output_csv = "data/aggregated_case_detailed.csv"
     # output_csv_tuple = "data/aggregated_case_tuple.csv"
     # # extract_patient_data(xes_file, output_csv)
     # convert_timestamps(csv_file, csv_file_edited)
     # aggregate_case_details(csv_file_edited, output_csv)
     # aggregate_case_details_tuple(csv_file_edited, output_csv_tuple)
-    add_class_column("data/aggregated_case_detailed_to_classify.csv", "data/aggregated_case_detailed_to_classify_final.csv")
+    # add_class_column("data/aggregated_case_detailed_to_classify.csv", "data/aggregated_case_detailed_to_classify_final.csv")
+    escape_inner_apostrophes()
