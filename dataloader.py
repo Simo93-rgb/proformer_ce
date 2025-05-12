@@ -15,8 +15,9 @@ torchtext.disable_torchtext_deprecation_warning()
 # https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
 
 
-class Dataloader():
+class Dataloader:
     def __init__(self, filename, opt):
+        self.labels = None
         self.vocab = None
         self.test_data = None
         self.valid_data = None
@@ -46,20 +47,36 @@ class Dataloader():
         df.to_csv(f"{filename}_preprocessed.csv", index=False)
 
         return df
-    
 
     def process_seq(self, x):
-    
-        #lx = x.activity.to_list()
         lx = x
         if self.opt["split_actions"]:
             lx = [i.split("_se_")[::-1] for i in lx]
             lx = [item for row in lx for item in row]
-        out = ["<sos>"]+lx+["<eos>"]
+
+        # Cerca "class_0" o "class_1" nella sequenza e sostituiscili con <mask>
+        processed_lx = []
+
+        for item in lx:
+            if item == "class_0":
+                # Mascheramento casuale per il training (80% di probabilità)
+                if random.random() < 0.8:  # Usare opt.get("mask_prob", 0.8) nella versione finale
+                    processed_lx.append("<mask>")
+                else:
+                    processed_lx.append("<cls0>")
+            elif item == "class_1":
+                if random.random() < 0.8:
+                    processed_lx.append("<mask>")
+                else:
+                    processed_lx.append("<cls1>")
+            else:
+                processed_lx.append(item)
+
+        out = ["<sos>"] + processed_lx + ["<eos>"]
 
         if self.opt["pad"]:
-            if(len(out) < self.opt["bptt"]):
-                out = out+["<pad>" for _ in range(self.opt["bptt"] - len(out))]
+            if (len(out) < self.opt["bptt"]):
+                out = out + ["<pad>" for _ in range(self.opt["bptt"] - len(out))]
 
         return out
 
@@ -129,14 +146,40 @@ class Dataloader():
 
         return data, target
 
+    def get_batch_labels(self, batch_idx, batch_size=None):
+        """
+        Ottiene le etichette per un batch specifico.
+        """
+        if batch_size is None:
+            batch_size = self.opt["batch_size"]
+
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, len(self.labels))
+
+        return self.labels[start_idx:end_idx].to(self.opt["device"])
 
     def get_dataset(self, num_test_ex=1000, vocab = None, debugging=False):
-        act_seq = self.df.groupby("case_id").apply(lambda x: self.process_seq(x.activity.to_list()))
-        act_seq = act_seq.to_list()
-        random.shuffle(act_seq)
-
+        act_seq = self.df.groupby("case_id").apply(
+            lambda x: self.process_seq(x.activity.to_list())
+        )
         if self.opt["use_l2_data"]:
             act_seq = act_seq + self.act_seq_l2
+
+        # Rimuoviamo le righe problematiche che causano l'errore
+        # sequences = [item[0] for item in act_seq]
+        # labels = [item[1] for item in act_seq]
+
+        # Estrai le etichette dalle sequenze se necessario
+        labels = []
+        for seq in act_seq:
+            # Cerca "class_0" o "class_1" nella sequenza
+            if "class_0" in seq:
+                labels.append(0.0)
+            elif "class_1" in seq:
+                labels.append(1.0)
+            else:
+                # Gestione del caso in cui l'etichetta non è presente
+                labels.append(float('nan'))
 
         train_act_seq = act_seq[num_test_ex:]
         valid_act_seq = act_seq[:num_test_ex - (num_test_ex // 2)]
@@ -144,10 +187,14 @@ class Dataloader():
 
         # Se il vocabolario non è fornito, costruiscilo
         if vocab is None:
-            # Costruisci il vocabolario
-            vocab = build_vocab_from_iterator(self.yield_tokens(), specials=['<unk>'])
+            vocab = build_vocab_from_iterator(
+                self.yield_tokens(),
+                specials=['<unk>', '<sos>', '<eos>', '<pad>', '<mask>', '<cls0>', '<cls1>']
+            )
             vocab.set_default_index(vocab['<unk>'])
 
+        # Salva le labels per il training
+        self.labels = torch.tensor(labels, dtype=torch.float)
 
         # Salva il vocabolario in un file per debugging
         if debugging:

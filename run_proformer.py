@@ -4,7 +4,7 @@ import random
 import argparse
 import torch
 import torch.nn.functional as F
-from dataloader2 import Dataloader
+from dataloader import Dataloader
 from proformer import TransformerModel
 from params import bpi_params
 from taxonomy import Taxonomy, TaxonomyEmbedding
@@ -20,61 +20,58 @@ for process mining and prediction tasks. It includes functionality for hyperpara
 configuration, model training with transformer architecture, and performance evaluation.
 """
 
-def parse_params():
+
+def parse_params(params):
     """
     Parse command-line arguments for Proformer configuration.
-
     Returns:
         dict: Dictionary containing all configuration parameters
     """
     parser = argparse.ArgumentParser()
 
-    # Add arguments with defaults from bpi_params
-    parser.add_argument("--device", type=str, default=bpi_params.get("device", "cuda:0"))
-    parser.add_argument("--test_split_size", type=int, default=bpi_params.get("test_split_size", 1000), help="Number of examples to use for valid and test")
-    parser.add_argument("--pad", action="store_true", help="Pads the sequences to bptt", default=bpi_params.get("pad", True))
-    parser.add_argument("--bptt", type=int, default=bpi_params.get("bptt", 237), help="Max len of sequences")
-    parser.add_argument("--split_actions", action="store_true", default=bpi_params.get("split_actions", True), help="Splits multiple action if in one (uses .split('_se_'))")
-    parser.add_argument("--batch_size", type=int, default=bpi_params.get("batch_size", 2), help="Regulates the batch size")
-    parser.add_argument("--pos_enc_dropout", type=float, default=bpi_params.get("pos_enc_dropout", 0.1), help="Regulates dropout in pe")
-    parser.add_argument("--d_model", type=int, default=bpi_params.get("d_model", 128))
-    parser.add_argument("--nhead", type=int, default=bpi_params.get("nhead", 1))
-    parser.add_argument("--nlayers", type=int, default=bpi_params.get("nlayers", 3))
-    parser.add_argument("--dropout", type=float, default=bpi_params.get("dropout", 0.1))
-    parser.add_argument("--d_hid", type=int, default=bpi_params.get("d_hid", 128))
-    parser.add_argument("--epochs", type=int, default=bpi_params.get("epochs", 150))
-    parser.add_argument("--lr", type=float, default=bpi_params.get("lr", 3.))
-    parser.add_argument("--gamma_scheduler", type=float, default=bpi_params.get("gamma_scheduler", 0.97))
-    parser.add_argument("--use_l2_data", action="store_true", default=bpi_params.get("use_l2_data", True), help="Uses data from level 2 dataset")
-    parser.add_argument("--use_taxonomy", action="store_true", default=bpi_params.get("use_taxonomy", False), help="Introduces weights based on a taxonomy of the tokens")
-    parser.add_argument("--use_pe", action="store_true", default=bpi_params.get("use_pe", False))
-    parser.add_argument("--taxonomy_emb_type", type=str, default=bpi_params.get("taxonomy_emb_type", "laplacian"))
-    parser.add_argument("--taxonomy_emb_size", type=int, default=bpi_params.get("taxonomy_emb_size", 64))
-    parser.add_argument("--weight_decay", type=float, default=bpi_params.get("weight_decay", 1e-5), help="L2 regularization weight decay")
-    parser.add_argument("--warmup_steps", type=int, default=bpi_params.get("warmup_steps", 4000), help="Number of warmup steps for learning rate scheduler")
-    parser.add_argument("--gradient_clip", type=float, default=bpi_params.get("gradient_clip", 1.0), help="Gradient clipping value")
-    parser.add_argument("--early_stopping_patience", type=int, default=bpi_params.get("early_stopping_patience", 15), help="Patience for early stopping")
-    parser.add_argument("--early_stopping_min_delta", type=float, default=bpi_params.get("early_stopping_min_delta", 0.0001), help="Minimum delta for early stopping")
+    # Aggiorna gli argomenti con i valori da bpi_params
+    parser.add_argument("--device", type=str, default=params.get("device", "cuda:0"))
+    parser.add_argument("--test_split_size", type=int, default=params["test_split_size"],
+                        help="Number of examples to use for valid and test")
+    parser.add_argument("--pad", action="store_true", default=params["pad"])
+    parser.add_argument("--bptt", type=int, default=params["bptt"], help="Max len of sequences")
+    parser.add_argument("--split_actions", action="store_true", default=params["split_actions"],
+                        help="Splits multiple actions if in one (uses .split('_se_'))")
+    parser.add_argument("--batch_size", type=int, default=params["batch_size"], help="Regulates the batch size")
+    parser.add_argument("--pos_enc_dropout", type=float, default=params["pos_enc_dropout"],
+                        help="Regulates dropout in pe")
+    parser.add_argument("--d_model", type=int, default=params["d_model"])
+    parser.add_argument("--nhead", type=int, default=params["nhead"])
+    parser.add_argument("--nlayers", type=int, default=params["nlayers"])
+    parser.add_argument("--dropout", type=float, default=params["dropout"])
+    parser.add_argument("--d_hid", type=int, default=params["d_hid"])
+    parser.add_argument("--epochs", type=int, default=params["epochs"])
+    parser.add_argument("--lr", type=float, default=params["lr"])
+    parser.add_argument("--gamma_scheduler", type=float, default=params["gamma_scheduler"])
+    parser.add_argument("--use_l2_data", action="store_true", default=params["use_l2_data"],
+                        help="Uses data from level 2 dataset")
+    parser.add_argument("--use_taxonomy", action="store_true", default=params["use_taxonomy"],
+                        help="Introduces weights based on a taxonomy of the tokens")
+    parser.add_argument("--use_pe", action="store_true", default=params["use_pe"])
+    parser.add_argument("--taxonomy_emb_type", type=str, default=params["taxonomy_emb_type"])
+    parser.add_argument("--taxonomy_emb_size", type=int, default=params["taxonomy_emb_size"])
+    parser.add_argument("--weight_decay", type=float, default=params["weight_decay"])  # Added weight decay
+    parser.add_argument("--gradient_clip", type=float, default=params["gradient_clip"],
+                        help="Add gradient clipping for stability")  # Gradient clipping
 
-    # Default dataset and taxonomy files
-    data_dir = "data"
-    dataset_filename = "finale_preprocessed.csv"
-    taxonomy_filename = "bpi_taxonomy.csv"
-    dataset_file_path = os.path.join(data_dir, dataset_filename)
-    taxonomy_file_path = os.path.join(data_dir, taxonomy_filename)
-    # check if the path is ok
-    if not os.path.exists(dataset_file_path):
-        raise FileNotFoundError(f"The file {dataset_file_path} does not exist. Please check the path and try again.")
-
-    if not os.path.exists(taxonomy_file_path):
-        raise FileNotFoundError(f"The file {taxonomy_file_path} does not exist. Please check the path and try again.")
-
-    #    parser.add_argument("--dataset", type=str, default="data/BPI_Challenge_2012.csv")
-    parser.add_argument("--dataset", type=str, default=dataset_file_path)
-    parser.add_argument("--taxonomy", type=str, default=taxonomy_file_path)
+    # Early stopping parameters
+    parser.add_argument("--early_stopping_patience", type=int, default=params['early_stopping_patience'],
+                        help="Stop after this many epochs without improvement")
+    parser.add_argument("--early_stopping_min_delta", type=float, default=params['early_stopping_min_delta'],
+                        help="Minimum change to count as improvement")
 
     args = parser.parse_args()
     opt = vars(args)
+
+    # Gestione file system
+    data_path = os.getenv('DATA_PATH', './data')
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
 
     return opt
 
@@ -109,32 +106,17 @@ def get_ranked_metrics(accs, out, t):
 
 
 def train(model, opt, loader, optimizer):
-    """
-    Train the model for one epoch.
-
-    Args:
-        model (TransformerModel): The Proformer model to train
-        opt (dict): Configuration parameters
-        loader (Dataloader): Data loader for training data
-        optimizer (torch.optim.Optimizer): Optimizer for parameter updates
-
-    Returns:
-        float: Average training loss for the epoch
-    """
-    batch:int=0
+    batch = 0
     model.train()
     total_loss = 0.
-    log_interval = 200
-    start_time = time.time()
-
-    num_batches = len(loader.train_data) // opt["bptt"]
+    cls_total_loss = 0.
 
     for batch, i in enumerate(range(0, loader.train_data.size(0) - 1, opt["bptt"])):
         # Get batch data and targets
         data, targets = loader.get_batch(loader.train_data, i)
-        # Create attention mask to prevent attending to future tokens
         attn_mask = model.create_masked_attention_matrix(data.size(0)).to(opt["device"])
 
+        # Forward pass
         output = model(data, attn_mask)
         output_flat = output.view(-1, model.ntokens)
 
@@ -145,63 +127,103 @@ def train(model, opt, loader, optimizer):
 
         weights = torch.ones(model.ntokens).to(opt["device"])
 
-        # Calculate cross entropy loss
-        loss = F.cross_entropy(output_flat, targets, weight=weights)
+        # Loss per la predizione della sequenza
+        seq_loss = F.cross_entropy(output_flat, targets, weight=weights)
 
-        # Backpropagation and optimization
+        # Loss per la classificazione
+        cls_loss = 0.0
+        if hasattr(model, 'cls_logits') and model.cls_logits.numel() > 0:
+            batch_labels = loader.get_batch_labels(i // opt["bptt"])
+            if batch_labels.size(0) == model.cls_logits.size(0):
+                cls_loss = F.binary_cross_entropy_with_logits(model.cls_logits, batch_labels)
+                cls_loss = cls_loss * 0.5  # Peso della loss di classificazione
+
+        # Loss combinata
+        loss = seq_loss + cls_loss
+
+        # Backpropagation
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)  # Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
         optimizer.step()
 
         total_loss += loss.item()
+        if isinstance(cls_loss, torch.Tensor):
+            cls_total_loss += cls_loss.item()
 
-    return total_loss / (batch+1)
+    return total_loss / (batch + 1)
 
 
 def evaluate(model, eval_data, loader, opt):
-    """
-    Evaluate the model on validation or test data.
-
-    Args:
-        model (TransformerModel): The Proformer model to evaluate
-        eval_data (torch.Tensor): Evaluation dataset
-        loader (Dataloader): Data loader
-        opt (dict): Configuration parameters
-
-    Returns:
-        tuple: (loss, accuracies_dict) containing perplexity and accuracy metrics
-    """
     model.eval()
     total_loss = 0.
-    accs = {1: 0., 3: 0., 5: 0.}  # Track accuracy@1, accuracy@3, accuracy@5
+    cls_total_loss = 0.
+    accs = {1: 0., 3: 0., 5: 0.}
+
+    # Metriche per la classificazione
+    true_positives = 0
+    false_positives = 0
+    true_negatives = 0
+    false_negatives = 0
+    cls_samples = 0
 
     with torch.no_grad():
-        for batch,i in enumerate(range(0, eval_data.size(0) - 1, opt["bptt"])):
-            # Get batch data
+        for batch, i in enumerate(range(0, eval_data.size(0) - 1, opt["bptt"])):
             data, targets = loader.get_batch(eval_data, i)
             attn_mask = model.create_masked_attention_matrix(data.size(0)).to(opt["device"])
 
             seq_len = data.size(0)
             output = model(data, attn_mask)
-
             output_flat = output.view(-1, model.ntokens)
 
-            # Filter out padding tokens
+            # Filtra i token di padding
             pad_mask = (targets != 1) & (targets != 8)
             targets = targets[pad_mask]
             output_flat = output_flat[pad_mask, :]
 
-            # Calculate loss and accuracy metrics
+            # Calcola la loss di sequenza
             total_loss += seq_len * F.cross_entropy(output_flat, targets).item()
             accs = get_ranked_metrics(accs, output_flat, targets)
 
-        # Normalize metrics by number of batches
-        for k in accs.keys():
-            accs[k] = accs[k] / (batch+1)
+            # Calcola le metriche di classificazione
+            if hasattr(model, 'cls_logits') and model.cls_logits.numel() > 0 and model.cls_logits.dim() > 0:
+                batch_labels = loader.get_batch_labels(i // opt["bptt"])
+                if batch_labels.size(0) == model.cls_logits.size(0):
+                    cls_loss = F.binary_cross_entropy_with_logits(model.cls_logits, batch_labels)
+                    cls_total_loss += cls_loss.item()
+
+                    # Calcola la matrice di confusione
+                    cls_preds = (torch.sigmoid(model.cls_logits) > 0.5).float()
+                    true_positives += ((cls_preds == 1) & (batch_labels == 1)).sum().item()
+                    false_positives += ((cls_preds == 1) & (batch_labels == 0)).sum().item()
+                    true_negatives += ((cls_preds == 0) & (batch_labels == 0)).sum().item()
+                    false_negatives += ((cls_preds == 0) & (batch_labels == 1)).sum().item()
+                    cls_samples += batch_labels.size(0)
+
+        # Normalizza le metriche
+        for k in accs:
+            accs[k] = accs[k] / (batch + 1)
         loss = total_loss / (len(eval_data) - 1)
 
-    return loss, accs
+        # Calcola le metriche di classificazione finali
+        cls_metrics = {}
+        if cls_samples > 0:
+            precision = true_positives / (true_positives + false_positives) if (
+                                                                                           true_positives + false_positives) > 0 else 0
+            recall = true_positives / (true_positives + false_negatives) if (
+                                                                                        true_positives + false_negatives) > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+            accuracy = (true_positives + true_negatives) / cls_samples
+
+            cls_metrics = {
+                'loss': cls_total_loss / (batch + 1),
+                'precision': precision,
+                'recall': recall,
+                'f1': f1,
+                'accuracy': accuracy
+            }
+
+    return loss, accs, cls_metrics
 
 
 def main(opt=None, load_vocab=False):
@@ -218,7 +240,7 @@ def main(opt=None, load_vocab=False):
 
     if opt is None:
         print("-- PARSING CMD ARGS --")
-        opt = parse_params()
+        opt = parse_params(bpi_params)
     print(opt)
 
     # -- Add optional params here --
@@ -259,7 +281,7 @@ def main(opt=None, load_vocab=False):
     else:
         # Initialize model
         vocab_dim = len(loader.vocab)
-        model = TransformerModel(vocab_dim, opt).to(opt["device"])
+        model = TransformerModel(loader.vocab, vocab_dim, opt).to(opt["device"])
 
     # Setup optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"])
@@ -270,6 +292,7 @@ def main(opt=None, load_vocab=False):
     patience = opt.get("early_stopping_patience", 15)  # Default to 15 if not specified
     min_delta = opt.get("early_stopping_min_delta", 0.0001) # Default to 0.0001 if not specified
     counter = 0
+    test_cls_metrics = None
     # Training loop
     for epoch in range(1, opt["epochs"]+1):
         epoch_start_time = time.time()
@@ -277,7 +300,7 @@ def main(opt=None, load_vocab=False):
         # Train for one epoch
         train_loss = train(model, opt, loader, optimizer)
         # Evaluate on validation set
-        valid_loss, valid_accs = evaluate(model, loader.valid_data, loader, opt)
+        valid_loss, valid_accs, valid_cls_metrics = evaluate(model, loader.valid_data, loader, opt)
         valid_ppl = math.exp(valid_loss)
 
         # Extract and save hidden states (trace embeddings)
@@ -302,6 +325,12 @@ def main(opt=None, load_vocab=False):
                   f'acc@1 {valid_accs[1]:.4f} | '
                   f'acc@3 {valid_accs[3]:.4f} |')
             print('-' * 104)
+            # Aggiungi questa parte quando stampi i risultati
+            if valid_cls_metrics:
+                print(f"| Classification metrics: Accuracy: {valid_cls_metrics['accuracy']:.4f} | "
+                      f"F1: {valid_cls_metrics['f1']:.4f} | "
+                      f"Precision: {valid_cls_metrics['precision']:.4f} | "
+                      f"Recall: {valid_cls_metrics['recall']:.4f} |")
 
         # Save best model based on validation accuracy
         if valid_accs[1] > best_val_acc + min_delta:
@@ -314,7 +343,7 @@ def main(opt=None, load_vocab=False):
             best_val_acc = valid_accs[1]
 
             # Evaluate on test set when we find a better model
-            test_loss, test_accs = evaluate(model, loader.test_data, loader, opt)
+            test_loss, test_accs, test_cls_metrics = evaluate(model, loader.test_data, loader, opt)
             test_ppl = math.exp(test_loss)
             print(f"| Performance on test: Test ppl: {test_ppl:5.2f} | "
                   f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}" + " " * 21 + "|")
@@ -333,13 +362,31 @@ def main(opt=None, load_vocab=False):
             break
         # Update learning rate
         scheduler.step()
+    print("\n" + "=" * 50)
+    print("VALUTAZIONE FINALE SUL SET DI TEST:")
+    final_test_loss, final_test_accs, final_test_cls_metrics = evaluate(model, loader.test_data, loader, opt)
+    final_test_ppl = math.exp(final_test_loss)
+    print(
+        f"| Test ppl: {final_test_ppl:5.2f} | test acc@1: {final_test_accs[1]:.4f} | test acc@3: {final_test_accs[3]:.4f} |")
+    if final_test_cls_metrics:
+        print(f"| Classification metrics: Accuracy: {final_test_cls_metrics['accuracy']:.4f} | "
+              f"F1: {final_test_cls_metrics['f1']:.4f} | "
+              f"Precision: {final_test_cls_metrics['precision']:.4f} | "
+              f"Recall: {final_test_cls_metrics['recall']:.4f} |")
+    print("=" * 50)
 
-    return best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs
+    return best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics
 
 if __name__ == "__main__":
-    opt = parse_params()
+    opt = parse_params(bpi_params)
     # opt["dataset"] = "data/aggregated_case_tuple.csv"
     # opt["dataset"] = "data/aggregated_case_detailed.csv"
     opt["dataset"] = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
-    best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs = main(opt=opt)
+
+    best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
     print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
+    if test_cls_metrics:
+        print(f"Test classification metrics: Accuracy: {test_cls_metrics['accuracy']:.4f}, "
+              f"F1: {test_cls_metrics['f1']:.4f}, "
+              f"Precision: {test_cls_metrics['precision']:.4f}, "
+              f"Recall: {test_cls_metrics['recall']:.4f}")

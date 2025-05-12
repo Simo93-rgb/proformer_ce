@@ -91,7 +91,7 @@ class TransformerModel(nn.Module):
         linear (nn.Sequential): Linear layer for output.
     """
 
-    def __init__(self, ntoken, opt, taxonomy=None):
+    def __init__(self, vocab, ntoken, opt, taxonomy=None):
         """
         Initializes the TransformerModel.
 
@@ -101,7 +101,9 @@ class TransformerModel(nn.Module):
             taxonomy (Tensor, optional): Taxonomy tensor if use_taxonomy is enabled.
         """
         super().__init__()
+        self.cls_logits = None
         self.last_hidden_states = None
+        self.vocab = vocab
         self.ntokens = ntoken
         self.opt = opt
         self.model_type = 'Transformer'
@@ -121,6 +123,11 @@ class TransformerModel(nn.Module):
         self.norm = nn.LayerNorm(opt["d_model"])  # Added layer norm before final projection
         self.linear = nn.Linear(opt["d_model"], ntoken)  # Simplified to single Linear layer
         self.init_weights()
+        self.classifier = nn.Sequential(
+            nn.Linear(opt["d_model"], 128),
+            nn.ReLU(),
+            nn.Linear(128, 1)
+        )
 
 
     # def init_weights(self):
@@ -163,24 +170,13 @@ class TransformerModel(nn.Module):
     def forward(self, src, src_mask=None):
         """
         Forward pass of the model.
-
-        Args:
-            src (Tensor): Input tensor.
-            src_mask (Tensor, optional): Source mask tensor.
-
-        Returns:
-            Tensor: Output tensor.
         """
-
         # Calculate token embeddings and scale
         x = self.embedding(src) * math.sqrt(self.d_model)
 
         # Add taxonomy embeddings if enabled
-        if self.opt["use_taxonomy"] and self.taxonomy is not None:
-            # Retrieve taxonomy embeddings corresponding to tokens in src
-            # taxonomy[src] returns a tensor of size [seq_len, batch_size, taxonomy_emb_size]
+        if self.opt["use_taxonomy"] and hasattr(self, 'taxonomy'):
             tax_emb = self.taxonomy[src]
-            # Normalize and project taxonomy embeddings to d_model
             tax_pe = self.tax_encoder(F.normalize(tax_emb, p=2, dim=-1))
             x = x + F.dropout(tax_pe, 0.01)
 
@@ -190,10 +186,31 @@ class TransformerModel(nn.Module):
 
         # Pass through transformer encoder
         output = self.transformer_encoder(x, src_mask, is_causal=False)
+
+        # IMPORTANTE: Salva l'output del transformer come hidden states
         self.last_hidden_states = output.clone()
+
+        # Normalizza e applica la proiezione lineare
         output = self.norm(output)
-        output = self.linear(output)
-        return output
+        output_logits = self.linear(output)
+
+        # Trova le posizioni dei token <mask>
+        mask_positions = (src == self.vocab["<mask>"])
+
+        # Estrai gli hidden states solo per le posizioni mascherate
+        if torch.any(mask_positions):
+            masked_embeddings = self.last_hidden_states[mask_positions]
+            cls_logits = self.classifier(masked_embeddings).squeeze()
+            # Gestisce il caso di un singolo elemento
+            if cls_logits.dim() == 0:
+                self.cls_logits = cls_logits.unsqueeze(0)
+            else:
+                self.cls_logits = cls_logits
+        else:
+            # Crea un tensore vuoto ma con dimensioni corrette
+            self.cls_logits = torch.zeros((0,), device=src.device)
+
+        return output_logits
 
 
 
