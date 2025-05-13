@@ -3,8 +3,7 @@ import ast
 import torch
 import pandas as pd
 import pickle
-from dataloader import Dataloader
-from proformer import TransformerModel
+
 
 def classify_new_traces(model_path, vocab_path, dataset_path, output_path, opt):
     """
@@ -58,9 +57,9 @@ if __name__ == "__main__":
         "bptt": 237,  # Ensure this matches the training configuration
     }
     classify_new_traces(
-        model_path="models/proformer-base.bin",
-        vocab_path="models/vocab.pkl",
-        dataset_path="data/aggregated_case_tuple_to_classify.csv",
-        output_path="data/classification_results.csv",
+        model_path="../models/proformer-base.bin",
+        vocab_path="../models/vocab.pkl",
+        dataset_path="../data/aggregated_case_tuple_to_classify.csv",
+        output_path="../data/classification_results.csv",
         opt=opt
     )

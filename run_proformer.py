@@ -4,10 +4,10 @@ import random
 import argparse
 import torch
 import torch.nn.functional as F
-from dataloader import Dataloader
+from proformer.dataloader import Dataloader
 from proformer import TransformerModel
-from params import bpi_params
-from taxonomy import Taxonomy, TaxonomyEmbedding
+from proformer.params import bpi_params
+from taxonomy import TaxonomyEmbedding
 import pickle
 from datetime import datetime
 import pandas as pd
