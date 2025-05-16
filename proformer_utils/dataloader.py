@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import os
 import random
 import pickle
-
+from config import DATA_DIR
 import torchtext
 from torchtext.vocab import build_vocab_from_iterator
 torchtext.disable_torchtext_deprecation_warning()
@@ -28,7 +28,7 @@ class Dataloader:
         self.df = pd.read_csv(filename)
         print (self.df)
         if self.opt["use_l2_data"]:
-            with open('data/level2_dataset_preprocessed.pkl', 'rb') as handle:
+            with open(f'{DATA_DIR}/level2_dataset_preprocessed.pkl', 'rb') as handle:
                 act_seq_l2 = pickle.load(handle)
             self.act_seq_l2 = list(map(self.process_seq, act_seq_l2))
         

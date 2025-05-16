@@ -4,15 +4,15 @@ import random
 import argparse
 import torch
 import torch.nn.functional as F
-from proformer.dataloader import Dataloader
-from proformer.proformer import TransformerModel
-from proformer.params import bpi_params
-from taxonomy import TaxonomyEmbedding
 import pickle
 from datetime import datetime
 import pandas as pd
-import os
 from typing import Dict, Any, Tuple, Optional
+from proformer_utils.dataloader import Dataloader
+from proformer_utils.params import bpi_params
+from proformer_utils.proformer import TransformerModel
+from taxonomy import TaxonomyEmbedding
+from config import DATA_DIR, MODELS_DIR
 
 """
 This module implements training, evaluation, and execution of the Proformer model
@@ -57,9 +57,7 @@ def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
     parser.add_argument("--early_stopping_min_delta", type=float, default=params['early_stopping_min_delta'])
     args = parser.parse_args()
     opt = vars(args)
-    data_path = os.getenv('DATA_PATH', '../data')
-    if not os.path.exists(data_path):
-        os.makedirs(data_path)
+
     return opt
 
 def create_attention_mask(seq_len: int, device: torch.device) -> torch.Tensor:
@@ -259,7 +257,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
     print(opt)
     loader = Dataloader(filename=opt["dataset"], opt=opt)
     loader.get_dataset(num_test_ex=opt["test_split_size"])
-    with open("../models/vocab.pkl", "wb") as f:
+    with open(f"{MODELS_DIR}/vocab.pkl", "wb") as f:
         pickle.dump(loader.vocab, f)
     if opt["use_taxonomy"]:
         tax = TaxonomyEmbedding(
@@ -267,7 +265,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
             filename=opt["taxonomy"],
             opt=opt
         )
-        model = TransformerModel(len(loader.vocab), opt, taxonomy=tax.embs).to(opt["device"])
+        model = TransformerModel(loader.vocab, len(loader.vocab), opt=opt, taxonomy=tax.embs).to(opt["device"])
     else:
         vocab_dim = len(loader.vocab)
         model = TransformerModel(loader.vocab, vocab_dim, opt).to(opt["device"])
@@ -309,7 +307,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
             print(f"| Performance on test: Test ppl: {test_ppl:5.2f} | "
                   f"test acc@1: {test_accs[1]:.4f} | test acc@3: {test_accs[3]:.4f}" + " " * 21 + "|")
             print("-"*104)
-            torch.save(model, "../models/proformer-base.bin")
+            torch.save(model, f"{MODELS_DIR}/proformer-base.bin")
         else:
             counter += 1
             if epoch % 10 == 0:
@@ -336,7 +334,7 @@ if __name__ == "__main__":
     opt = parse_params(bpi_params)
     # opt["dataset"] = "data/aggregated_case_tuple.csv"
     # opt["dataset"] = "data/aggregated_case_detailed.csv"
-    opt["dataset"] = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
+    opt["dataset"] = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
 
     best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
     print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
