@@ -9,10 +9,12 @@ from datetime import datetime
 import pandas as pd
 from typing import Dict, Any, Tuple, Optional
 from proformer_utils.dataloader import Dataloader
-from proformer_utils.params import bpi_params
+from proformer_utils.params import bpi_params, parse_params
+from proformer_utils.plotting_attention_maps import plot_attention_maps
 from proformer_utils.proformer import TransformerModel
 from taxonomy import TaxonomyEmbedding
 from config import DATA_DIR, MODELS_DIR
+
 
 """
 This module implements training, evaluation, and execution of the Proformer model
@@ -20,45 +22,7 @@ for process mining and prediction tasks. It includes functionality for hyperpara
 configuration, model training with transformer architecture, and performance evaluation.
 """
 
-def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Parse command-line arguments for Proformer configuration.
 
-    Args:
-        params (dict): Default parameters.
-
-    Returns:
-        dict: Dictionary containing all configuration parameters.
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default=params.get("device", "cuda:0"))
-    parser.add_argument("--test_split_size", type=int, default=params["test_split_size"])
-    parser.add_argument("--pad", action="store_true", default=params["pad"])
-    parser.add_argument("--bptt", type=int, default=params["bptt"])
-    parser.add_argument("--split_actions", action="store_true", default=params["split_actions"])
-    parser.add_argument("--batch_size", type=int, default=params["batch_size"])
-    parser.add_argument("--pos_enc_dropout", type=float, default=params["pos_enc_dropout"])
-    parser.add_argument("--d_model", type=int, default=params["d_model"])
-    parser.add_argument("--nhead", type=int, default=params["nhead"])
-    parser.add_argument("--nlayers", type=int, default=params["nlayers"])
-    parser.add_argument("--dropout", type=float, default=params["dropout"])
-    parser.add_argument("--d_hid", type=int, default=params["d_hid"])
-    parser.add_argument("--epochs", type=int, default=params["epochs"])
-    parser.add_argument("--lr", type=float, default=params["lr"])
-    parser.add_argument("--gamma_scheduler", type=float, default=params["gamma_scheduler"])
-    parser.add_argument("--use_l2_data", action="store_true", default=params["use_l2_data"])
-    parser.add_argument("--use_taxonomy", action="store_true", default=params["use_taxonomy"])
-    parser.add_argument("--use_pe", action="store_true", default=params["use_pe"])
-    parser.add_argument("--taxonomy_emb_type", type=str, default=params["taxonomy_emb_type"])
-    parser.add_argument("--taxonomy_emb_size", type=int, default=params["taxonomy_emb_size"])
-    parser.add_argument("--weight_decay", type=float, default=params["weight_decay"])
-    parser.add_argument("--gradient_clip", type=float, default=params["gradient_clip"])
-    parser.add_argument("--early_stopping_patience", type=int, default=params['early_stopping_patience'])
-    parser.add_argument("--early_stopping_min_delta", type=float, default=params['early_stopping_min_delta'])
-    args = parser.parse_args()
-    opt = vars(args)
-
-    return opt
 
 def create_attention_mask(seq_len: int, device: torch.device) -> torch.Tensor:
     """
@@ -239,6 +203,62 @@ def evaluate(model: torch.nn.Module, eval_data: torch.Tensor, loader: Dataloader
             cls_metrics['loss'] = cls_total_loss / (batch + 1)
     return loss, accs, cls_metrics
 
+def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/attention_maps"):
+    """
+    Salva le mappe di attenzione del modello per un singolo batch di dati.
+
+    Args:
+        model (TransformerModel): Il modello proformer
+        data_loader (Dataloader): Il data loader
+        opt (dict): Le opzioni di configurazione
+        output_dir (str): Directory dove salvare le mappe
+    """
+    import os
+
+    # Crea la directory di output se non esiste
+    os.makedirs(output_dir, exist_ok=True)
+
+    model.eval()
+    with torch.no_grad():
+        # Prendi un singolo batch
+        data, targets = data_loader.get_batch(data_loader.test_data, 0)
+        attn_mask = create_attention_mask(data.size(0), opt["device"])
+
+        # Esegui il forward pass
+        _ = model(data, attn_mask)
+
+        # Ottieni le mappe di attenzione
+        attention_maps = model.get_attention_maps()
+
+        # Ricava i token dell'input usando il vocabolario corretto
+        input_tokens = []
+        for idx in data.squeeze():
+            if idx.dim() == 0:  # gestisce il caso in cui squeeze restituisca un singolo valore
+                token_idx = idx.item()
+                token = data_loader.vocab.get_itos()[token_idx]
+                input_tokens.append(token)
+            else:
+                # Gestisce il caso in cui squeeze non rimuova tutte le dimensioni
+                for i in idx:
+                    token_idx = i.item()
+                    token = data_loader.vocab.get_itos()[token_idx]
+                    input_tokens.append(token)
+
+        # Salva le mappe per ogni livello e testa
+        for layer_idx in range(len(attention_maps)):
+            num_heads = attention_maps[layer_idx].shape[0]
+            for head_idx in range(num_heads):
+                output_file = f"{output_dir}/attn_layer{layer_idx}_head{head_idx}.png"
+                plot_attention_maps(
+                    attention_maps,
+                    output_file,
+                    tokens=input_tokens,
+                    layer_idx=layer_idx,
+                    head_idx=head_idx,
+                    title=f"Mappa di Attenzione"
+                )
+
+        print(f"Mappe di attenzione salvate in {output_dir}")
 def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tuple[float, float, Dict[int, float], int, Dict[int, float], Optional[Dict[str, float]]]:
     """
     Main function to train and evaluate the Proformer model.
@@ -336,10 +356,13 @@ if __name__ == "__main__":
     # opt["dataset"] = "data/aggregated_case_detailed.csv"
     opt["dataset"] = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
 
-    best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
-    print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
-    if test_cls_metrics:
-        print(f"Test classification metrics: Accuracy: {test_cls_metrics['accuracy']:.4f}, "
-              f"F1: {test_cls_metrics['f1']:.4f}, "
-              f"Precision: {test_cls_metrics['precision']:.4f}, "
-              f"Recall: {test_cls_metrics['recall']:.4f}")
+    # best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
+    # print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
+
+    # Carica il modello migliore e salva le mappe di attenzione
+    model = torch.load(f"{MODELS_DIR}/proformer-base.bin")
+    loader = Dataloader(filename=opt["dataset"], opt=opt)
+    loader.get_dataset(num_test_ex=opt["test_split_size"])
+
+    # Salva le mappe di attenzione
+    save_attention_maps(model, loader, opt)

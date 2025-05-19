@@ -10,28 +10,12 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from tempfile import TemporaryDirectory
 from typing import Tuple
 
-# This code is a modification of the original codebase found at 
+from proformer_utils.custom_classes import PositionalEncoding, CustomTransformerEncoderLayer, CustomTransformerEncoder
+
+
+# This code is a modification of the original codebase found at
 # https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
 
-class PositionalEncoding(nn.Module):
-    
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        """
-        Arguments:
-            x: Tensor, shape ``[seq_len, batch_size, embedding_dim]``
-        """
-        x = x + self.pe[:x.size(0)]
-        return self.dropout(x)
 
 class TransformerModel(nn.Module):
     """
@@ -69,9 +53,14 @@ class TransformerModel(nn.Module):
         self.opt = opt
         self.model_type = 'Transformer'
         self.pos_encoder = PositionalEncoding(opt["d_model"], dropout=opt["pos_enc_dropout"], max_len=opt["bptt"])
-        encoder_layers = TransformerEncoderLayer(opt["d_model"], opt["nhead"], opt["d_hid"], opt["dropout"],
-                                                 activation="gelu", norm_first=True)  # Changed to gelu
-        self.transformer_encoder = TransformerEncoder(encoder_layers, opt["nlayers"], enable_nested_tensor=True)
+
+        # Sostituiamo il TransformerEncoder standard con la nostra versione personalizzata
+        encoder_layer = CustomTransformerEncoderLayer(
+            opt["d_model"], opt["nhead"], opt["d_hid"], opt["dropout"],
+            activation="gelu", norm_first=True
+        )
+        self.transformer_encoder = CustomTransformerEncoder(encoder_layer, opt["nlayers"])
+
         self.embedding = nn.Embedding(ntoken, opt["d_model"])
         self.d_model = opt["d_model"]
 
@@ -99,6 +88,15 @@ class TransformerModel(nn.Module):
         # Initialize linear layer
         nn.init.kaiming_uniform_(self.linear.weight, nonlinearity='relu')
         nn.init.zeros_(self.linear.bias)
+
+    def get_attention_maps(self):
+        """
+        Restituisce le mappe di attenzione di tutti i livelli del transformer
+
+        Returns:
+            list: Lista di tensori di attenzione, uno per ogni livello
+        """
+        return self.transformer_encoder.attention_maps
 
     def create_masked_attention_matrix(self, sz):
         """
