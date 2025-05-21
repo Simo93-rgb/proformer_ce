@@ -203,6 +203,63 @@ def evaluate(model: torch.nn.Module, eval_data: torch.Tensor, loader: Dataloader
             cls_metrics['loss'] = cls_total_loss / (batch + 1)
     return loss, accs, cls_metrics
 
+# def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/attention_maps"):
+#     """
+#     Salva le mappe di attenzione del modello per un singolo batch di dati.
+#
+#     Args:
+#         model (TransformerModel): Il modello proformer
+#         data_loader (Dataloader): Il data loader
+#         opt (dict): Le opzioni di configurazione
+#         output_dir (str): Directory dove salvare le mappe
+#     """
+#     import os
+#
+#     # Crea la directory di output se non esiste
+#     os.makedirs(output_dir, exist_ok=True)
+#
+#     model.eval()
+#     with torch.no_grad():
+#         # Prendi un singolo batch
+#         data, targets = data_loader.get_batch(data_loader.test_data, 0)
+#         attn_mask = create_attention_mask(data.size(0), opt["device"])
+#
+#         # Esegui il forward pass
+#         _ = model(data, attn_mask)
+#
+#         # Ottieni le mappe di attenzione
+#         attention_maps = model.get_attention_maps()
+#
+#         # Ricava i token dell'input usando il vocabolario corretto
+#         input_tokens = []
+#         for idx in data.squeeze():
+#             if idx.dim() == 0:  # gestisce il caso in cui squeeze restituisca un singolo valore
+#                 token_idx = idx.item()
+#                 token = data_loader.vocab.get_itos()[token_idx]
+#                 input_tokens.append(token)
+#             else:
+#                 # Gestisce il caso in cui squeeze non rimuova tutte le dimensioni
+#                 for i in idx:
+#                     token_idx = i.item()
+#                     token = data_loader.vocab.get_itos()[token_idx]
+#                     input_tokens.append(token)
+#
+#         # Salva le mappe per ogni livello e testa
+#         for layer_idx in range(len(attention_maps)):
+#             num_heads = attention_maps[layer_idx].shape[0]
+#             for head_idx in range(num_heads):
+#                 output_file = f"{output_dir}/attn_layer{layer_idx}_head{head_idx}.png"
+#                 plot_attention_maps(
+#                     attention_maps,
+#                     output_file,
+#                     tokens=input_tokens,
+#                     layer_idx=layer_idx,
+#                     head_idx=head_idx,
+#                     title=f"Mappa di Attenzione"
+#                 )
+#
+#         print(f"Mappe di attenzione salvate in {output_dir}")
+
 def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/attention_maps"):
     """
     Salva le mappe di attenzione del modello per un singolo batch di dati.
@@ -231,18 +288,7 @@ def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/atten
         attention_maps = model.get_attention_maps()
 
         # Ricava i token dell'input usando il vocabolario corretto
-        input_tokens = []
-        for idx in data.squeeze():
-            if idx.dim() == 0:  # gestisce il caso in cui squeeze restituisca un singolo valore
-                token_idx = idx.item()
-                token = data_loader.vocab.get_itos()[token_idx]
-                input_tokens.append(token)
-            else:
-                # Gestisce il caso in cui squeeze non rimuova tutte le dimensioni
-                for i in idx:
-                    token_idx = i.item()
-                    token = data_loader.vocab.get_itos()[token_idx]
-                    input_tokens.append(token)
+        input_tokens = [data_loader.vocab.get_itos()[idx] for idx in data[0].tolist()]  # Corretto l'indexing per prendere il primo elemento del batch
 
         # Salva le mappe per ogni livello e testa
         for layer_idx in range(len(attention_maps)):
@@ -255,10 +301,11 @@ def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/atten
                     tokens=input_tokens,
                     layer_idx=layer_idx,
                     head_idx=head_idx,
-                    title=f"Mappa di Attenzione"
+                    title=f"Attention Map"
                 )
 
         print(f"Mappe di attenzione salvate in {output_dir}")
+
 def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tuple[float, float, Dict[int, float], int, Dict[int, float], Optional[Dict[str, float]]]:
     """
     Main function to train and evaluate the Proformer model.
