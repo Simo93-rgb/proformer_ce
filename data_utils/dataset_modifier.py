@@ -7,6 +7,8 @@ import csv
 import re
 import ast
 
+from config import DATA_DIR
+
 def convert_timestamps(input_csv, output_csv):
     """
     Legge un file CSV, converte i timestamp nel formato desiderato e salva il risultato in un nuovo file CSV.
@@ -395,13 +397,13 @@ def escape_inner_apostrophes():
 
 if __name__ == "__main__":
     # xes_file = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.xes"
-    # csv_file = "data/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv"
-    # csv_file_edited = "data/ALL_20DRG_2022_2023_CLASS_Duratio.csv"
+    csv_file = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded.csv"
+    csv_file_edited = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
     # output_csv = "data/aggregated_case_detailed.csv"
     # output_csv_tuple = "data/aggregated_case_tuple.csv"
     # # extract_patient_data(xes_file, output_csv)
-    # convert_timestamps(csv_file, csv_file_edited)
+    convert_timestamps(csv_file, csv_file_edited)
     # aggregate_case_details(csv_file_edited, output_csv)
     # aggregate_case_details_tuple(csv_file_edited, output_csv_tuple)
     # add_class_column("data/aggregated_case_detailed_to_classify.csv", "data/aggregated_case_detailed_to_classify_final.csv")
-    escape_inner_apostrophes()
+    # escape_inner_apostrophes()
