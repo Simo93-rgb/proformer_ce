@@ -46,6 +46,7 @@ class TransformerModel(nn.Module):
             taxonomy (Tensor, optional): Taxonomy tensor if use_taxonomy is enabled.
         """
         super().__init__()
+        self.mask_positions = None
         self.cls_logits = None
         self.last_hidden_states = None
         self.vocab = vocab
@@ -141,7 +142,7 @@ class TransformerModel(nn.Module):
 
         # Trova le posizioni dei token <mask>
         mask_positions = (src == self.vocab["<mask>"])
-
+        self.mask_positions = mask_positions
         # Estrai gli hidden states solo per le posizioni mascherate
         if torch.any(mask_positions):
             masked_embeddings = self.last_hidden_states[mask_positions]

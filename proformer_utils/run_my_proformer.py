@@ -44,7 +44,9 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
         opt = parse_params(bpi_params)
     print(opt)
     loader = Dataloader(filename=opt["dataset"], opt=opt)
-    loader.get_dataset(num_test_ex=opt["test_split_size"])
+    loader.get_dataset(num_test_ex=opt["test_split_size"], debugging=True)
+    print("Esempio sequenza test:", loader.test_data[0])
+
     with open(f"{MODELS_DIR}/vocab.pkl", "wb") as f:
         pickle.dump(loader.vocab, f)
     if opt["use_taxonomy"]:
@@ -57,6 +59,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
     else:
         vocab_dim = len(loader.vocab)
         model = TransformerModel(loader.vocab, vocab_dim, opt).to(opt["device"])
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=opt["lr"], weight_decay=opt.get("weight_decay", 0.0))
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=opt["gamma_scheduler"])
     best_val_acc = -float('inf')
@@ -64,6 +67,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
     min_delta = opt.get("early_stopping_min_delta", 0.0001)
     counter = 0
     test_cls_metrics = None
+    total_start_time = time.time()  # Inizio conteggio tempo totale
     for epoch in range(1, opt["epochs"]+1):
         epoch_start_time = time.time()
         train_loss = train(model, opt, loader, optimizer)
@@ -71,6 +75,7 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
         valid_ppl = math.exp(valid_loss)
         save_hidden_states(model.last_hidden_states, f"{MODELS_DIR}/hidden_states.csv")
         elapsed = time.time() - epoch_start_time
+        print(f"Tempo impiegato per epoca {epoch}: {elapsed:.2f} secondi")
         if (epoch % 10) == 0:
             print('-' * 104)
             print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
@@ -82,7 +87,9 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
                 print(f"| Classification metrics: Accuracy: {valid_cls_metrics.get('accuracy', 0):.4f} | "
                       f"F1: {valid_cls_metrics.get('f1', 0):.4f} | "
                       f"Precision: {valid_cls_metrics.get('precision', 0):.4f} | "
-                      f"Recall: {valid_cls_metrics.get('recall', 0):.4f} |")
+                      f"Recall: {valid_cls_metrics.get('recall', 0):.4f} |"
+                      f"MCC: {valid_cls_metrics.get('mcc', 0):.4f} |")
+
         if valid_accs[1] > best_val_acc + min_delta:
             counter = 0
             best_train_loss = train_loss
@@ -104,17 +111,23 @@ def main(opt: Optional[Dict[str, Any]] = None, load_vocab: bool = False) -> Tupl
             print(f"Early stopping triggered after {epoch} epochs without improvement")
             break
         scheduler.step()
+
+    print("\n" + "=" * 50)
+    total_elapsed = time.time() - total_start_time
+    print(f"\nTempo totale di training: {total_elapsed:.2f} secondi")
+
     print("\n" + "=" * 50)
     print("FINAL EVALUATION ON TEST SET:")
     final_test_loss, final_test_accs, final_test_cls_metrics = evaluate(model, loader.test_data, loader, opt)
     final_test_ppl = math.exp(final_test_loss)
     print(
-        f"| Test ppl: {final_test_ppl:5.2f} | test acc@1: {final_test_accs[1]:.4f} | test acc@3: {final_test_accs[3]:.4f} |")
+        f"| Test perplexity: {final_test_ppl:5.2f} | test acc@1: {final_test_accs[1]:.4f} | test acc@3: {final_test_accs[3]:.4f} |")
     if final_test_cls_metrics:
         print(f"| Classification metrics: Accuracy: {final_test_cls_metrics.get('accuracy', 0):.4f} | "
               f"F1: {final_test_cls_metrics.get('f1', 0):.4f} | "
               f"Precision: {final_test_cls_metrics.get('precision', 0):.4f} | "
-              f"Recall: {final_test_cls_metrics.get('recall', 0):.4f} |")
+              f"Recall: {final_test_cls_metrics.get('recall', 0):.4f} |"
+              f"MCC: {final_test_cls_metrics.get('mcc', 0):.4f} |")
     print("=" * 50)
     return best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics
 

@@ -21,10 +21,11 @@ if __name__ == "__main__":
     print("Inizializzazione configurazione...")
     opt = parse_params(bpi_params)
     opt["dataset"] = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
-    
-    # print("Addestramento modello...")
-    # best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
-    # print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
+
+    if opt["train"]:
+        print("Addestramento modello...")
+        best_train_loss, best_valid_loss, best_valid_accs, best_epoch, test_accs, test_cls_metrics = main(opt=opt)
+        print(f"Best epoch: {best_epoch} \t loss: {best_valid_loss} \t best accs: {best_valid_accs}")
     
     print("Caricamento modello...")
     model = torch.load(f"{MODELS_DIR}/proformer-base.bin")

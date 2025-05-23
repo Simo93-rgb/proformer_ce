@@ -27,7 +27,7 @@ def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/atten
         model.eval()
         with torch.no_grad():
             # Prendi un singolo batch
-            data, targets = data_loader.get_batch(data_loader.test_data, 0)
+            data, targets = data_loader.get_batch_from_list(data_loader.test_data, 0)
             attn_mask = create_attention_mask(data.size(0), opt["device"])
 
             # Esegui il forward pass
@@ -46,17 +46,19 @@ def save_attention_maps(model, data_loader, opt, output_dir=f"{MODELS_DIR}/atten
             print(f"Generando {total_maps} mappe di attenzione...")
             
             # Salva le mappe per ogni livello e testa
+            max_tokens = 20
+            input_tokens = input_tokens[:max_tokens]
             for layer_idx in range(len(attention_maps)):
                 num_heads = attention_maps[layer_idx].shape[0]
                 for head_idx in range(num_heads):
+                    attn_map = attention_maps[layer_idx][head_idx][:max_tokens, :max_tokens]
                     output_file = f"{output_dir}/attn_layer{layer_idx}_head{head_idx}.png"
-                    print(f"Elaborazione mappa: layer {layer_idx}, head {head_idx}")
-                    plot_attention_maps(
-                        attention_maps,
+                    plot_attention_maps_blocked(
+                        [torch.tensor(attn_map)],  # Passa solo la mappa tagliata
                         output_file,
                         tokens=input_tokens,
-                        layer_idx=layer_idx,
-                        head_idx=head_idx,
+                        layer_idx=0,
+                        head_idx=0,
                         title=f"Attention Map"
                     )
 
@@ -171,5 +173,51 @@ def plot_attention_maps_old(attention_maps, output_file, tokens=None, layer_idx=
     plt.savefig(output_file, dpi=300)
     plt.close()
 
+def plot_attention_maps_blocked(attention_maps, output_file, tokens=None, token_groups=None, layer_idx=0, head_idx=0, title="Mappa di Attenzione"):
+    """
+    Visualizza e salva le mappe di attenzione con separazione a blocchi tra gruppi di token.
 
+    Args:
+        attention_maps: Lista di tensori di attenzione
+        output_file: Percorso del file dove salvare il grafico
+        tokens: Lista di token per etichettare gli assi (optional)
+        token_groups: Lista di interi che indica il gruppo di ciascun token (es: [0,0,1,1,2,2])
+        layer_idx: Indice del livello da visualizzare
+        head_idx: Indice della testa di attenzione da visualizzare
+        title: Titolo del grafico
+    """
+
+
+    attn = attention_maps[layer_idx]
+    if len(attn.shape) == 2:
+        attn = attn.unsqueeze(0)
+    attn = attn[head_idx].detach().cpu().numpy()
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(attn, cmap='viridis')
+
+    # Blocchi: aggiungi linee di separazione tra gruppi
+    if token_groups is not None:
+        group_changes = [i for i in range(1, len(token_groups)) if token_groups[i] != token_groups[i-1]]
+        for pos in group_changes:
+            ax.axhline(pos-0.5, color='red', linewidth=1)
+            ax.axvline(pos-0.5, color='red', linewidth=1)
+
+    # Etichette
+    if tokens is not None:
+        ax.set_xticks(np.arange(len(tokens)))
+        ax.set_yticks(np.arange(len(tokens)))
+        ax.set_xticklabels(tokens, rotation=90, fontsize=8)
+        ax.set_yticklabels(tokens, fontsize=8)
+    else:
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    ax.set_title(f"{title} - Livello {layer_idx}, Testa {head_idx}")
+    ax.set_xlabel("Key Index")
+    ax.set_ylabel("Query Index")
+    fig.colorbar(im, ax=ax)
+    fig.tight_layout()
+    plt.savefig(output_file, dpi=300)
+    plt.close()
 

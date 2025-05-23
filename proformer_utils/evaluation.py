@@ -56,47 +56,118 @@ def calculate_ranked_metrics(output_flat: torch.Tensor, targets: torch.Tensor, a
     """
     return get_ranked_metrics(accs, output_flat, targets)
 
-def calculate_classification_metrics(model: torch.nn.Module, batch_labels: torch.Tensor) -> Tuple[float, int, int, int, int, int]:
-    """
-    Calcola le metriche di classificazione binaria.
-    
-    Args:
-        model: Il modello con i cls_logits
-        batch_labels: Le label vere del batch
-        
-    Returns:
-        Tuple con loss, true positives, false positives, true negatives, false negatives, numero di campioni
-    """
-    if not hasattr(model, 'cls_logits') or model.cls_logits.numel() == 0 or model.cls_logits.dim() == 0:
+def calculate_classification_metrics(cls_logits, batch_labels):
+    if cls_logits.numel() == 0 or batch_labels.numel() == 0:
         return 0.0, 0, 0, 0, 0, 0
-        
-    if batch_labels.size(0) != model.cls_logits.size(0):
-        return 0.0, 0, 0, 0, 0, 0
-        
-    cls_loss = F.binary_cross_entropy_with_logits(model.cls_logits, batch_labels)
-    cls_preds = (torch.sigmoid(model.cls_logits) > 0.5).float()
-    
+    cls_loss = F.binary_cross_entropy_with_logits(cls_logits, batch_labels)
+    cls_preds = (torch.sigmoid(cls_logits) > 0.5).float()
     tp = ((cls_preds == 1) & (batch_labels == 1)).sum().item()
     fp = ((cls_preds == 1) & (batch_labels == 0)).sum().item()
     tn = ((cls_preds == 0) & (batch_labels == 0)).sum().item()
     fn = ((cls_preds == 0) & (batch_labels == 1)).sum().item()
-    
     return cls_loss.item(), tp, fp, tn, fn, batch_labels.size(0)
+# def calculate_classification_metrics(model: torch.nn.Module, batch_labels: torch.Tensor) -> Tuple[float, int, int, int, int, int]:
+#     """
+#     Calcola le metriche di classificazione binaria.
+#
+#     Args:
+#         model: Il modello con i cls_logits
+#         batch_labels: Le label vere del batch
+#
+#     Returns:
+#         Tuple con loss, true positives, false positives, true negatives, false negatives, numero di campioni
+#     """
+#     if not hasattr(model, 'cls_logits') or model.cls_logits.numel() == 0 or model.cls_logits.dim() == 0:
+#         return 0.0, 0, 0, 0, 0, 0
+#
+#     if batch_labels.size(0) != model.cls_logits.size(0):
+#         return 0.0, 0, 0, 0, 0, 0
+#
+#     cls_loss = F.binary_cross_entropy_with_logits(model.cls_logits, batch_labels)
+#     cls_preds = (torch.sigmoid(model.cls_logits) > 0.5).float()
+#
+#     tp = ((cls_preds == 1) & (batch_labels == 1)).sum().item()
+#     fp = ((cls_preds == 1) & (batch_labels == 0)).sum().item()
+#     tn = ((cls_preds == 0) & (batch_labels == 0)).sum().item()
+#     fn = ((cls_preds == 0) & (batch_labels == 1)).sum().item()
+#
+#     return cls_loss.item(), tp, fp, tn, fn, batch_labels.size(0)
 
-def evaluate(model: torch.nn.Module, eval_data: torch.Tensor, loader: Dataloader, 
-            opt: Dict[str, Any]) -> Tuple[float, Dict[int, float], Dict[str, float]]:
+# def evaluate(model: torch.nn.Module, eval_data, loader: Dataloader,
+#             opt: Dict[str, Any]) -> Tuple[float, Dict[int, float], Dict[str, float]]:
+#     """
+#     Evaluate the model on validation or test data.
+#
+#     Args:
+#         model (torch.nn.Module): The model to evaluate.
+#         eval_data (list): List of batch tensors.
+#         loader (Dataloader): Data loader.
+#         opt (dict): Configuration options.
+#
+#     Returns:
+#         tuple: (loss, ranked accuracies, classification metrics)
+#     """
+#     model.eval()
+#     total_loss = 0.
+#     cls_total_loss = 0.
+#     accs = {1: 0., 3: 0., 5: 0.}
+#     true_positives = 0
+#     false_positives = 0
+#     true_negatives = 0
+#     false_negatives = 0
+#     cls_samples = 0
+#     num_batches = 0
+#
+#     with torch.no_grad():
+#         for batch_idx in range(len(eval_data)):
+#             data, targets = loader.get_batch_from_list(eval_data, batch_idx)
+#             attn_mask = create_attention_mask(data.shape[0], opt["device"])
+#
+#             # Calcola la loss di sequenza
+#             seq_loss, output_flat, targets_filtered = calculate_sequence_loss(model, data, targets, attn_mask)
+#             total_loss += seq_loss
+#
+#             # Calcola le metriche di accuratezza ranked
+#             accs = calculate_ranked_metrics(output_flat, targets_filtered, accs)
+#
+#             # Calcola le metriche di classificazione
+#             batch_labels = loader.get_batch_labels(batch_idx)
+#             if batch_labels.numel() == 0 or torch.isnan(batch_labels).all():
+#                 continue  # Salta batch senza etichette valide
+#
+#             cls_loss, tp, fp, tn, fn, samples = calculate_classification_metrics(model, batch_labels)
+#
+#             cls_total_loss += cls_loss
+#             true_positives += tp
+#             false_positives += fp
+#             true_negatives += tn
+#             false_negatives += fn
+#             cls_samples += samples
+#             num_batches += 1
+#
+#
+#         # Normalizza i risultati
+#         for k in accs:
+#             accs[k] = accs[k] / num_batches if num_batches > 0 else 0
+#
+#         loss = total_loss / num_batches if num_batches > 0 else 0
+#
+#         # Calcola le metriche finali di classificazione
+#         cls_metrics = {}
+#         if cls_samples > 0:
+#             preds = torch.tensor([1]*true_positives + [1]*false_positives + [0]*true_negatives + [0]*false_negatives)
+#             labels = torch.tensor([1]*true_positives + [0]*false_positives + [0]*true_negatives + [1]*false_negatives)
+#             cls_metrics = compute_classification_metrics(preds=preds, labels=labels)
+#             cls_metrics['loss'] = cls_total_loss / num_batches if num_batches > 0 else 0
+#
+#         print(f"cls_samples: {cls_samples}, cls_metrics: {cls_metrics}")
+#     return loss, accs, cls_metrics
+
+def evaluate(model: torch.nn.Module, eval_data, loader, opt):
     """
-    Evaluate the model on validation or test data.
-
-    Args:
-        model (torch.nn.Module): The model to evaluate.
-        eval_data (torch.Tensor): Evaluation data.
-        loader (Dataloader): Data loader.
-        opt (dict): Configuration options.
-
-    Returns:
-        tuple: (loss, ranked accuracies, classification metrics)
+    Valuta il modello su validation o test set, calcolando le metriche solo sulle posizioni mascherate.
     """
+
     model.eval()
     total_loss = 0.
     cls_total_loss = 0.
@@ -107,23 +178,31 @@ def evaluate(model: torch.nn.Module, eval_data: torch.Tensor, loader: Dataloader
     false_negatives = 0
     cls_samples = 0
     num_batches = 0
-    
+
     with torch.no_grad():
-        for i in range(0, eval_data.size(0) - 1, opt["bptt"]):
-            data, targets = loader.get_batch(eval_data, i)
-            attn_mask = create_attention_mask(data.size(0), opt["device"])
-            
-            # Calcola la loss di sequenza
+        for batch_idx in range(len(eval_data)):
+            data, targets = loader.get_batch_from_list(eval_data, batch_idx)
+            attn_mask = create_attention_mask(data.shape[0], opt["device"])
+
+            # Loss di sequenza
             seq_loss, output_flat, targets_filtered = calculate_sequence_loss(model, data, targets, attn_mask)
             total_loss += seq_loss
-            
-            # Calcola le metriche di accuratezza ranked
+
+            # Metriche ranked
             accs = calculate_ranked_metrics(output_flat, targets_filtered, accs)
-            
-            # Calcola le metriche di classificazione
-            batch_labels = loader.get_batch_labels(i // opt["bptt"])
-            cls_loss, tp, fp, tn, fn, samples = calculate_classification_metrics(model, batch_labels)
-            
+
+            # --- Nuova logica: metriche di classificazione solo sulle posizioni mascherate ---
+            mask_positions = model.mask_positions  # (batch_size, seq_len-1)
+            batch_labels, has_mask = loader.get_masked_batch_labels(batch_idx, mask_positions)
+            if batch_labels.numel() == 0:
+                continue  # Nessuna sequenza mascherata in questo batch
+
+            cls_logits = model.cls_logits  # già shape (num_masked,)
+            if cls_logits.numel() == 0 or batch_labels.numel() == 0:
+                continue  # Nessuna sequenza mascherata in questo batch
+
+            cls_loss, tp, fp, tn, fn, samples = calculate_classification_metrics(cls_logits, batch_labels)
+
             cls_total_loss += cls_loss
             true_positives += tp
             false_positives += fp
@@ -131,19 +210,19 @@ def evaluate(model: torch.nn.Module, eval_data: torch.Tensor, loader: Dataloader
             false_negatives += fn
             cls_samples += samples
             num_batches += 1
-        
-        # Normalizza i risultati
+
+        # Normalizzazione
         for k in accs:
             accs[k] = accs[k] / num_batches if num_batches > 0 else 0
-        
-        loss = total_loss / (len(eval_data) - 1) if len(eval_data) > 1 else 0
-        
-        # Calcola le metriche finali di classificazione
+        loss = total_loss / num_batches if num_batches > 0 else 0
+
+        # Metriche finali di classificazione
         cls_metrics = {}
         if cls_samples > 0:
             preds = torch.tensor([1]*true_positives + [1]*false_positives + [0]*true_negatives + [0]*false_negatives)
             labels = torch.tensor([1]*true_positives + [0]*false_positives + [0]*true_negatives + [1]*false_negatives)
             cls_metrics = compute_classification_metrics(preds=preds, labels=labels)
             cls_metrics['loss'] = cls_total_loss / num_batches if num_batches > 0 else 0
-            
+
+        print(f"cls_samples: {cls_samples}, cls_metrics: {cls_metrics}")
     return loss, accs, cls_metrics

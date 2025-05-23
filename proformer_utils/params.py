@@ -37,6 +37,7 @@ def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
     parser.add_argument("--gradient_clip", type=float, default=params["gradient_clip"])
     parser.add_argument("--early_stopping_patience", type=int, default=params['early_stopping_patience'])
     parser.add_argument("--early_stopping_min_delta", type=float, default=params['early_stopping_min_delta'])
+    parser.add_argument("--train", action="store_false", default=True)
     args = parser.parse_args()
     opt = vars(args)
 
@@ -57,7 +58,7 @@ bpi_params = {
     'use_pe': True,    # Enable proper positional encoding
     'weight_decay': 1e-5,  # Add L2 regularization
     "epochs": 300,     # Train longer with early stopping
-    "bptt": 237,
+    "bptt": 980,
     "split_actions": True,
     "pad": True,
     "test_split_size": 1000,

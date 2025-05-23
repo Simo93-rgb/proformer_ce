@@ -111,6 +111,16 @@ class Dataloader:
         # Move the reshaped and transposed data tensor to the specified device and return it
         return data.to(self.opt["device"])
 
+    def batchify_sequences(self, sequences, batch_size):
+        # sequences: lista di sequenze (ognuna già paddata a bptt)
+        batches = []
+        for i in range(0, len(sequences), batch_size):
+            batch = sequences[i:i + batch_size]
+            # Stack per ottenere un tensore (batch_size, seq_len)
+            batch_tensor = torch.stack([torch.tensor(self.vocab(seq), dtype=torch.long) for seq in batch])
+            batches.append(batch_tensor.to(self.opt["device"]))
+        return batches
+
     def data_process(self, raw_text_iter, vocab):
         """
         Processes raw text data into a concatenated tensor of token indices.
@@ -146,28 +156,64 @@ class Dataloader:
 
         return data, target
 
+    def get_batch_from_list(self, source, batch_idx):
+        # source è una lista di batch, ognuno shape (batch_size, seq_len)
+        data = source[batch_idx]  # shape: (batch_size, seq_len)
+        # Per language modeling: target è la stessa sequenza shiftata di 1 a sinistra
+        target = data[:, 1:].contiguous().view(-1)  # shape: (batch_size * (seq_len-1))
+        data = data[:, :-1].contiguous()  # shape: (batch_size, seq_len-1)
+        return data, target
+
     def get_batch_labels(self, batch_idx, batch_size=None):
         """
         Ottiene le etichette per un batch specifico.
         """
-        if batch_size is None:
-            batch_size = self.opt["batch_size"]
+        # Ricava la lista dati corretta
+        if hasattr(self, "train_data") and self.train_data is not None:
+            data_list = self.train_data
+        elif hasattr(self, "valid_data") and self.valid_data is not None:
+            data_list = self.valid_data
+        elif hasattr(self, "test_data") and self.test_data is not None:
+            data_list = self.test_data
+        else:
+            raise ValueError("Nessun dato batch trovato.")
 
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, len(self.labels))
+        # Calcola la dimensione reale del batch corrente
+        real_batch_size = data_list[batch_idx].shape[0]
 
+        # Calcola start_idx sommando le dimensioni reali dei batch precedenti
+        start_idx = sum(data_list[i].shape[0] for i in range(batch_idx))
+        end_idx = start_idx + real_batch_size
         return self.labels[start_idx:end_idx].to(self.opt["device"])
 
-    def get_dataset(self, num_test_ex=1000, vocab = None, debugging=False):
-        act_seq = self.df.groupby("case_id").apply(
-            lambda x: self.process_seq(x.activity.to_list())
-        )
-        if self.opt["use_l2_data"]:
-            act_seq = act_seq + self.act_seq_l2
+    # def get_batch_labels(self, batch_idx, batch_size=None):
+    #     """
+    #     Ottiene le etichette per un batch specifico.
+    #     """
+    #     if batch_size is None:
+    #         batch_size = self.opt["batch_size"]
+    #
+    #     start_idx = batch_idx * batch_size
+    #     end_idx = min(start_idx + batch_size, len(self.labels))
+    #
+    #     return self.labels[start_idx:end_idx].to(self.opt["device"])
 
+    # def get_masked_batch_labels(self, batch_idx, mask_positions):
+    #     batch_labels = self.get_batch_labels(batch_idx)
+    #     # mask_positions: (batch_size, seq_len-1) -> True se c'è almeno un <mask> nella sequenza
+    #     has_mask = mask_positions.any(dim=1)  # (batch_size,)
+    #     return batch_labels[has_mask], has_mask
+    def get_masked_batch_labels(self, batch_idx, mask_positions):
+        real_batch_size = mask_positions.shape[0]
+        batch_labels = self.get_batch_labels(batch_idx, batch_size=real_batch_size)
+        has_mask = mask_positions.any(dim=1)  # (real_batch_size,)
+        return batch_labels[has_mask], has_mask
+
+    def get_dataset(self, num_test_ex=100, vocab = None, debugging=False):
+        raw_act_seq = self.df.groupby("case_id").apply(lambda x: x.activity.to_list())
         # Estrai le etichette dalle sequenze se necessario
         labels = []
-        for seq in act_seq:
+        for seq in raw_act_seq:
             # Cerca "class_0" o "class_1" nella sequenza
             if "class_0" in seq:
                 labels.append(0.0)
@@ -176,6 +222,13 @@ class Dataloader:
             else:
                 # Gestione del caso in cui l'etichetta non è presente
                 labels.append(float('nan'))
+
+        act_seq = self.df.groupby("case_id").apply(
+            lambda x: self.process_seq(x.activity.to_list())
+        )
+        if self.opt["use_l2_data"]:
+            act_seq = act_seq + self.act_seq_l2
+
 
         train_act_seq = act_seq[num_test_ex:]
         valid_act_seq = act_seq[:num_test_ex - (num_test_ex // 2)]
@@ -188,13 +241,13 @@ class Dataloader:
                 specials=['<unk>', '<sos>', '<eos>', '<pad>', '<mask>', '<cls0>', '<cls1>']
             )
             vocab.set_default_index(vocab['<unk>'])
-
+        self.vocab = vocab
         # Salva le labels per il training
         self.labels = torch.tensor(labels, dtype=torch.float)
 
         # Salva il vocabolario in un file per debugging
         if debugging:
-            with open("../data/vocab.txt", "w") as f:
+            with open(f"{DATA_DIR}/vocab.txt", "w") as f:
                 for token in vocab.get_itos():
                     f.write(f"{token}\n")
 
@@ -203,14 +256,18 @@ class Dataloader:
         valid_raw_data = [item for sublist in valid_act_seq for item in sublist]
         test_raw_data = [item for sublist in test_act_seq for item in sublist]
 
-        train_data = self.batchify(self.data_process(train_raw_data, vocab), bsz=len(train_act_seq) // self.opt["batch_size"])
-        valid_data = self.batchify(self.data_process(valid_raw_data, vocab), bsz=len(valid_act_seq) // self.opt["batch_size"])
-        test_data = self.batchify(self.data_process(test_raw_data, vocab), bsz=len(test_act_seq) // self.opt["batch_size"])
+        # train_data = self.batchify(self.data_process(train_raw_data, vocab), bsz=len(train_act_seq) // self.opt["batch_size"])
+        # valid_data = self.batchify(self.data_process(valid_raw_data, vocab), bsz=len(valid_act_seq) // self.opt["batch_size"])
+        # test_data = self.batchify(self.data_process(test_raw_data, vocab), bsz=len(test_act_seq) // self.opt["batch_size"])
+
+        train_data = self.batchify_sequences(train_act_seq, batch_size=self.opt["batch_size"])
+        valid_data = self.batchify_sequences(valid_act_seq, batch_size=self.opt["batch_size"])
+        test_data = self.batchify_sequences(test_act_seq, batch_size=self.opt["batch_size"])
 
         self.train_data = train_data
         self.valid_data = valid_data
         self.test_data = test_data
-        self.vocab = vocab
+
 
         return vocab, train_data, valid_data, test_data
 

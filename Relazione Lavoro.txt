@@ -1,0 +1,32 @@
+Ecco una breve relazione sul lavoro svolto e sul problema attuale, con riferimenti ai file sorgente modificati:
+
+<hr></hr> Relazione sul Debugging e Modifiche Effettuate
+
+1. Contesto e Obiettivo Stiamo lavorando su un modello Transformer per process mining, con pipeline di training, valutazione e visualizzazione delle mappe di attenzione. Il codice principale coinvolge i file dataloader.py, evaluation.py, training.py, proformer.py e run_my_proformer.py.
+
+2. Problema Riscontrato Durante la fase di valutazione (evaluate in evaluation.py), si verifica un errore di tipo IndexError dovuto a un disallineamento tra la dimensione delle label del batch (batch_labels) e la maschera delle posizioni mascherate (has_mask). In particolare, l’errore è:
+
+IndexError: The shape of the mask [20] at index 0 does not match the shape of the indexed tensor [32] at index 0
+
+Questo accade perché l’ultimo batch può essere più corto del batch size fisso (ad esempio 20 invece di 32), ma le label vengono comunque estratte come se il batch fosse sempre di dimensione fissa.
+
+3. Modifiche Effettuate
+
+
+In dataloader.py, la funzione get_batch_labels è stata modificata per calcolare start_idx ed end_idx sommando le dimensioni reali dei batch precedenti, così da estrarre sempre il numero corretto di label per ogni batch, anche per l’ultimo batch più corto.
+In dataloader.py, la funzione get_masked_batch_labels è stata aggiornata per ricavare la dimensione reale del batch da mask_positions e passare questa informazione a get_batch_labels.
+Sono stati aggiunti print di debug per confrontare le shape di batch_labels e has_mask e individuare eventuali disallineamenti.
+4. Stato Attuale Nonostante le modifiche, il problema persiste: batch_labels ha ancora shape (32,) mentre has_mask ha shape (20,) nell’ultimo batch. Questo suggerisce che c’è ancora un disallineamento tra la costruzione dei batch (batchify_sequences in dataloader.py) e l’estrazione delle label (self.labels). Potrebbe esserci un problema nella corrispondenza tra sequenze e label, oppure nella logica di slicing delle label.
+
+5. Prossimi Passi
+
+
+Verificare che la lista delle sequenze e la lista delle label siano sempre allineate in fase di costruzione dei batch.
+Continuare il debug stampando per ogni batch: indici, shape delle sequenze, shape delle label, e confrontare con la maschera.
+<hr></hr> Riferimenti ai file modificati:
+
+
+dataloader.py: funzioni get_batch_labels, get_masked_batch_labels, batchify_sequences
+evaluation.py: funzione evaluate (dove si verifica l’errore)
+Print di debug inseriti in dataloader.py e evaluation.py
+<hr></hr> Questa relazione riassume il percorso seguito e il punto in cui ci troviamo nel debugging.

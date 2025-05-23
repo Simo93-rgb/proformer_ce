@@ -22,16 +22,16 @@ def train(model: torch.nn.Module, opt: Dict[str, Any], loader: Dataloader, optim
     model.train()
     total_loss = 0.
     cls_total_loss = 0.
-    for batch, i in enumerate(range(0, loader.train_data.size(0) - 1, opt["bptt"])):
-        data, targets = loader.get_batch(loader.train_data, i)
-        attn_mask = create_attention_mask(data.size(0), opt["device"])
+    for batch_idx, batch in enumerate(loader.train_data):
+        data, targets = loader.get_batch_from_list(loader.train_data, batch_idx)
+        attn_mask = create_attention_mask(data.shape[0], opt["device"])
         output = model(data, attn_mask)
         output_flat = output.view(-1, model.ntokens)
         targets, output_flat = filter_padding(targets, output_flat)
         seq_loss = F.cross_entropy(output_flat, targets)
         cls_loss = 0.0
         if hasattr(model, 'cls_logits') and model.cls_logits.numel() > 0:
-            batch_labels = loader.get_batch_labels(i // opt["bptt"])
+            batch_labels = loader.get_batch_labels(batch_idx)
             if batch_labels.size(0) == model.cls_logits.size(0):
                 cls_loss = F.binary_cross_entropy_with_logits(model.cls_logits, batch_labels) * 0.5
         loss = seq_loss + cls_loss
@@ -42,4 +42,4 @@ def train(model: torch.nn.Module, opt: Dict[str, Any], loader: Dataloader, optim
         total_loss += loss.item()
         if isinstance(cls_loss, torch.Tensor):
             cls_total_loss += cls_loss.item()
-    return total_loss / (batch + 1)
+    return total_loss / (batch_idx + 1)
