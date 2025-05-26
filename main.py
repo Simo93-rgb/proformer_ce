@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
     print("Inizializzazione configurazione...")
     opt = parse_params(bpi_params)
-    opt["dataset"] = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv"
+    opt["dataset"] = f"{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited_balanced.csv"
 
     if opt["train"]:
         print("Addestramento modello...")

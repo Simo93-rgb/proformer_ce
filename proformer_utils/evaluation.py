@@ -56,16 +56,54 @@ def calculate_ranked_metrics(output_flat: torch.Tensor, targets: torch.Tensor, a
     """
     return get_ranked_metrics(accs, output_flat, targets)
 
+
 def calculate_classification_metrics(cls_logits, batch_labels):
+    """
+    Calcola le metriche di classificazione con loss pesata per gestire lo sbilanciamento delle classi.
+
+    Args:
+        cls_logits: Logits di classificazione
+        batch_labels: Label vere
+
+    Returns:
+        tuple: (loss, true positives, false positives, true negatives, false negatives, num_samples)
+    """
     if cls_logits.numel() == 0 or batch_labels.numel() == 0:
         return 0.0, 0, 0, 0, 0, 0
-    cls_loss = F.binary_cross_entropy_with_logits(cls_logits, batch_labels)
-    cls_preds = (torch.sigmoid(cls_logits) > 0.5).float()
-    tp = ((cls_preds == 1) & (batch_labels == 1)).sum().item()
-    fp = ((cls_preds == 1) & (batch_labels == 0)).sum().item()
-    tn = ((cls_preds == 0) & (batch_labels == 0)).sum().item()
-    fn = ((cls_preds == 0) & (batch_labels == 1)).sum().item()
+
+    # Calcola la distribuzione delle classi
+    positive_mask = (batch_labels == 1)
+    negative_mask = (batch_labels == 0)
+    num_positive = torch.sum(positive_mask).item()
+    num_negative = torch.sum(negative_mask).item()
+
+    # Calcola il peso per la classe positiva basato sulla distribuzione
+    if num_positive > 0 and num_negative > 0:
+        pos_weight_value = num_negative / num_positive
+    else:
+        pos_weight_value = 3.0  # Default se non possiamo calcolare
+
+    # Limita il peso a un valore ragionevole
+    pos_weight_value = min(max(pos_weight_value, 1.0), 5.0)
+
+    # Applica il peso alla loss
+    pos_weight = torch.tensor([pos_weight_value], device=cls_logits.device)
+    cls_loss = F.binary_cross_entropy_with_logits(
+        cls_logits,
+        batch_labels,
+        pos_weight=pos_weight
+    )
+
+    # Calcola le metriche
+    with torch.no_grad():
+        cls_preds = (torch.sigmoid(cls_logits) > 0.5).float()
+        tp = torch.sum((cls_preds == 1) & (batch_labels == 1)).item()
+        fp = torch.sum((cls_preds == 1) & (batch_labels == 0)).item()
+        tn = torch.sum((cls_preds == 0) & (batch_labels == 0)).item()
+        fn = torch.sum((cls_preds == 0) & (batch_labels == 1)).item()
+
     return cls_loss.item(), tp, fp, tn, fn, batch_labels.size(0)
+
 # def calculate_classification_metrics(model: torch.nn.Module, batch_labels: torch.Tensor) -> Tuple[float, int, int, int, int, int]:
 #     """
 #     Calcola le metriche di classificazione binaria.
@@ -163,7 +201,7 @@ def calculate_classification_metrics(cls_logits, batch_labels):
 #         print(f"cls_samples: {cls_samples}, cls_metrics: {cls_metrics}")
 #     return loss, accs, cls_metrics
 
-def evaluate(model: torch.nn.Module, eval_data, loader, opt):
+def evaluate(model: torch.nn.Module, eval_data, loader, opt, data_type: str = "valid") -> Tuple[float, Dict[int, float], Dict[str, float]]:
     """
     Valuta il modello su validation o test set, calcolando le metriche solo sulle posizioni mascherate.
     """
@@ -193,7 +231,7 @@ def evaluate(model: torch.nn.Module, eval_data, loader, opt):
 
             # --- Nuova logica: metriche di classificazione solo sulle posizioni mascherate ---
             mask_positions = model.mask_positions  # (batch_size, seq_len-1)
-            batch_labels, has_mask = loader.get_masked_batch_labels(batch_idx, mask_positions)
+            batch_labels, has_mask = loader.get_masked_batch_labels(data_type, batch_idx, mask_positions)
             if batch_labels.numel() == 0:
                 continue  # Nessuna sequenza mascherata in questo batch
 

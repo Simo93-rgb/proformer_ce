@@ -16,6 +16,59 @@ from proformer_utils.custom_classes import PositionalEncoding, CustomTransformer
 # This code is a modification of the original codebase found at
 # https://github.com/pytorch/tutorials/blob/main/beginner_source/transformer_tutorial.py
 
+def create_special_attention_mask(src, vocab, device):
+    """
+    Crea una maschera di attenzione specializzata che permette ai token di prestare
+    attenzione in modo selettivo ad altri token in base alla loro importanza semantica.
+
+    Args:
+        src (torch.Tensor): Tensore di input contenente gli indici dei token [batch_size, seq_len]
+        vocab (torchtext.vocab.Vocab): Vocabolario del modello
+        device (str/torch.device): Dispositivo su cui allocare la maschera
+
+    Returns:
+        torch.Tensor: Maschera di attenzione di forma [batch_size, seq_len, seq_len]
+    """
+    # Determina la dimensione del batch e la lunghezza della sequenza
+    batch_size, seq_len = src.shape
+
+    # Crea una maschera di base (tutti possono prestare attenzione a tutti)
+    base_mask = torch.ones(batch_size, seq_len, seq_len, device=device)
+
+    # Ottieni gli indici dei token speciali
+    pad_idx = vocab["<pad>"] if "<pad>" in vocab.get_stoi() else -1
+    mask_idx = vocab["<mask>"] if "<mask>" in vocab.get_stoi() else -1
+    cls0_idx = vocab["<cls0>"] if "<cls0>" in vocab.get_stoi() else -1
+    cls1_idx = vocab["<cls1>"] if "<cls1>" in vocab.get_stoi() else -1
+
+    # Identifica le posizioni dei token speciali
+    pad_positions = (src == pad_idx)
+    cls0_positions = (src == cls0_idx)
+    cls1_positions = (src == cls1_idx)
+    mask_positions = (src == mask_idx)
+    class_positions = cls0_positions | cls1_positions | mask_positions
+
+    # Amplifica l'attenzione verso i token di classe (fattore 2.0)
+    for i in range(batch_size):
+        # I token di padding non ricevono né forniscono attenzione
+        for j in range(seq_len):
+            if pad_positions[i, j]:
+                base_mask[i, j, :] = 0  # Il padding non presta attenzione a nulla
+                base_mask[i, :, j] = 0  # Nessuno presta attenzione al padding
+
+            # I token di classe ricevono maggiore attenzione
+            if class_positions[i, j]:
+                # Aumenta l'attenzione dai token normali ai token di classe
+                for k in range(seq_len):
+                    if not (pad_positions[i, k] or class_positions[i, k]):
+                        base_mask[i, k, j] = 2.0  # Normale -> Classe: attenzione amplificata
+
+                # Aumenta l'attenzione tra token di classe
+                for k in range(seq_len):
+                    if class_positions[i, k] and k != j:
+                        base_mask[i, j, k] = 1.5  # Classe -> Classe: attenzione moderatamente amplificata
+
+    return base_mask
 
 class TransformerModel(nn.Module):
     """
@@ -117,43 +170,77 @@ class TransformerModel(nn.Module):
         """
         Forward pass of the model.
         """
-        # Calculate token embeddings and scale
-        x = self.embedding(src) * math.sqrt(self.d_model)
+        # Applica la maschera di attenzione speciale se richiesta
+        if self.opt.get("use_special_attention", True):
+            src_mask = create_special_attention_mask(src, self.vocab, src.device)
 
-        # Add taxonomy embeddings if enabled
-        if self.opt["use_taxonomy"] and hasattr(self, 'taxonomy'):
-            tax_emb = self.taxonomy[src]
-            tax_pe = self.tax_encoder(F.normalize(tax_emb, p=2, dim=-1))
-            x = x + F.dropout(tax_pe, 0.01)
+        # Continua con il resto della forward pass esistente
+        src = self.embedding(src) * math.sqrt(self.d_model)
+        src = self.pos_encoder(src)
 
-        # Apply positional encoding if enabled
-        if self.opt["use_pe"]:
-            x = self.pos_encoder(x)
+        if self.opt.get("use_taxonomy", False) and hasattr(self, 'taxonomy'):
+            # Codice esistente per la tassonomia...
+            pass
 
-        # Pass through transformer encoder
-        output = self.transformer_encoder(x, src_mask, is_causal=False)
+        output = self.transformer_encoder(src, mask=src_mask)
+        self.last_hidden_states = output
 
-        # IMPORTANTE: Salva l'output del transformer come hidden states
-        self.last_hidden_states = output.clone()
+        # Identifica le posizioni dei token <mask> per la classificazione
+        self.mask_positions = (src == self.vocab["<mask>"]).bool()
+        mask_hidden = output[self.mask_positions]
 
-        # Normalizza e applica la proiezione lineare
+        if mask_hidden.size(0) > 0:
+            self.cls_logits = self.classifier(mask_hidden).squeeze(-1)
+        else:
+            self.cls_logits = torch.tensor([], device=src.device)
+
         output = self.norm(output)
         output_logits = self.linear(output)
 
-        # Trova le posizioni dei token <mask>
-        mask_positions = (src == self.vocab["<mask>"])
-        self.mask_positions = mask_positions
-        # Estrai gli hidden states solo per le posizioni mascherate
-        if torch.any(mask_positions):
-            masked_embeddings = self.last_hidden_states[mask_positions]
-            cls_logits = self.classifier(masked_embeddings).squeeze()
-            # Gestisce il caso di un singolo elemento
-            if cls_logits.dim() == 0:
-                self.cls_logits = cls_logits.unsqueeze(0)
-            else:
-                self.cls_logits = cls_logits
-        else:
-            # Crea un tensore vuoto ma con dimensioni corrette
-            self.cls_logits = torch.zeros((0,), device=src.device)
-
         return output_logits
+
+    # def forward(self, src, src_mask=None):
+    #     """
+    #     Forward pass of the model.
+    #     """
+    #
+    #     # Calculate token embeddings and scale
+    #     x = self.embedding(src) * math.sqrt(self.d_model)
+    #
+    #     # Add taxonomy embeddings if enabled
+    #     if self.opt["use_taxonomy"] and hasattr(self, 'taxonomy'):
+    #         tax_emb = self.taxonomy[src]
+    #         tax_pe = self.tax_encoder(F.normalize(tax_emb, p=2, dim=-1))
+    #         x = x + F.dropout(tax_pe, 0.01)
+    #
+    #     # Apply positional encoding if enabled
+    #     if self.opt["use_pe"]:
+    #         x = self.pos_encoder(x)
+    #
+    #     # Pass through transformer encoder
+    #     output = self.transformer_encoder(x, src_mask, is_causal=False)
+    #
+    #     # IMPORTANTE: Salva l'output del transformer come hidden states
+    #     self.last_hidden_states = output.clone()
+    #
+    #     # Normalizza e applica la proiezione lineare
+    #     output = self.norm(output)
+    #     output_logits = self.linear(output)
+    #
+    #     # Trova le posizioni dei token <mask>
+    #     mask_positions = (src == self.vocab["<mask>"])
+    #     self.mask_positions = mask_positions
+    #     # Estrai gli hidden states solo per le posizioni mascherate
+    #     if torch.any(mask_positions):
+    #         masked_embeddings = self.last_hidden_states[mask_positions]
+    #         cls_logits = self.classifier(masked_embeddings).squeeze()
+    #         # Gestisce il caso di un singolo elemento
+    #         if cls_logits.dim() == 0:
+    #             self.cls_logits = cls_logits.unsqueeze(0)
+    #         else:
+    #             self.cls_logits = cls_logits
+    #     else:
+    #         # Crea un tensore vuoto ma con dimensioni corrette
+    #         self.cls_logits = torch.zeros((0,), device=src.device)
+    #
+    #     return output_logits

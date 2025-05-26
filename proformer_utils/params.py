@@ -44,15 +44,15 @@ def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
     return opt
 
 bpi_params = {
-    'batch_size': 32,  # Increase for better gradient estimation
-    'd_hid': 512,     # Standard ratio: 4x d_model
-    'd_model': 128,    # Keep current size
-    'dropout': 0.187731533170227,    # Slightly higher to prevent overfitting
+    'batch_size': 16,  # Increase for better gradient estimation
+    'd_hid': 2048,     # Standard ratio: 4x d_model
+    'd_model': 512,    # Keep current size
+    'dropout': 0.25,    # Slightly higher to prevent overfitting
     'gamma_scheduler': 0.9898196793787607,  # Slower decay for better convergence
     'lr': 0.00129695816783916,      # Higher learning rate with warmup
     'warmup_steps': 6000,  # Add warmup for stable initial training
-    'nhead': 2,        # Current value is appropriate
-    'nlayers': 3,      # Current value is good
+    'nhead': 8,        # Current value is appropriate
+    'nlayers': 6,      # Current value is good
     'taxonomy_emb_size': 32,  # Increase taxonomic representation
     'taxonomy_emb_type': 'laplacian',
     'use_pe': True,    # Enable proper positional encoding
@@ -67,6 +67,6 @@ bpi_params = {
     "use_l2_data": False,
     "gradient_clip": 1.0,  # Add gradient clipping for stability
         # Early stopping parameters
-    'early_stopping_patience': 15,  # Stop after this many epochs without improvement
+    'early_stopping_patience': 10,  # Stop after this many epochs without improvement
     'early_stopping_min_delta': 0.0001,  # Minimum change to count as improvement
 }
