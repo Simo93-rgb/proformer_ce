@@ -89,98 +89,134 @@ class Dataloader:
 
     def process_seq(self, x: List[str]) -> List[str]:
         """
-        Preprocesses a sequence of activities by applying optional splitting, masking,
-        and padding/truncation based on the provided options.
+        Preprocess a raw sequence: optional splitting of actions, probabilistic masking,
+        and addition of <sos> / <eos> tokens.
 
         Args:
-            x: A list of activity strings to process
+            x (List[str]): List of raw activity strings.
 
         Returns:
-            Processed sequence with special tokens added, optionally padded or truncated
+            List[str]: Processed token list ready for batching.
+                       Returns empty list on error.
         """
-        if not isinstance(x, list):
-            raise ValueError("Input x must be a non-empty list of activities.")
+        try:
+            if not isinstance(x, list):
+                raise ValueError("Input must be a list of strings")
 
-        lx = list(x)
+            seq = x.copy()
+            if self.opt.get("split_actions", False):
+                seq = [sub for item in seq for sub in item.split("_se_")[::-1]]
 
-        # Optionally split actions based on configuration
-        if self.opt.get("split_actions", False):
-            try:
-                lx = [i.split("_se_")[::-1] for i in lx]
-                lx = [item for row in lx for item in row]
-            except Exception as e:
-                print(f"Error splitting actions: {e}")
-                # Continue with original list if splitting fails
-
-        processed_lx = []
-        mask_prob = self.opt.get("mask_prob", 0.8)
-
-        # Process each token for masking
-        for item in lx:
-            if item == "class_0":
-                if random.random() < mask_prob:
-                    processed_lx.append("<mask>")
+            mask_prob = self.opt.get("mask_prob", 0.8)
+            processed: List[str] = []
+            for token in seq:
+                if token == "class_0":
+                    processed.append("<mask>" if random.random() < mask_prob else "<cls0>")
+                elif token == "class_1":
+                    processed.append("<mask>" if random.random() < mask_prob else "<cls1>")
                 else:
-                    processed_lx.append("<cls0>")
-            elif item == "class_1":
-                if random.random() < mask_prob:
-                    processed_lx.append("<mask>")
-                else:
-                    processed_lx.append("<cls1>")
-            else:
-                processed_lx.append(item)
+                    processed.append(token)
 
-        # Add special tokens
-        out = ["<sos>"] + processed_lx + ["<eos>"]
+            return ["<sos>"] + processed + ["<eos>"]
+        except Exception as e:
+            print(f"Error in process_seq: {e}")
+            return []
 
-        return self._apply_bptt(out)
+    def _split_windows(self, tokens: List[str]) -> List[List[str]]:
+        """
+        Split a token sequence into sliding windows of fixed length.
+
+        Args:
+            tokens (List[str]): Full token sequence including <sos> and <eos>.
+
+        Returns:
+            List[List[str]]: List of windows, each of length opt['bptt'], with configurable overlap.
+                             On error returns the original sequence as single window.
+        """
+        try:
+            bptt_len = self.opt["bptt"]
+            overlap = self.opt.get("bptt_overlap", bptt_len // 10)
+            if len(tokens) <= bptt_len:
+                return [tokens]
+
+            windows: List[List[str]] = []
+            start = 0
+            while start < len(tokens):
+                end = start + bptt_len
+                window = tokens[start:end]
+                if end < len(tokens) and window[-1] != "<eos>":
+                    window[-1] = "<eos>"
+                windows.append(window)
+                start += bptt_len - overlap
+            return windows
+        except Exception as e:
+            print(f"Error in _split_windows: {e}")
+            return [tokens]
+
+    def preprocess_trace(self, trace: List[str]) -> torch.Tensor:
+        """
+        Preprocess a single trace for inference: add <sos>/<eos>, split into windows,
+        select the first window and convert to index tensor.
+
+        Args:
+            trace (List[str]): List of event strings.
+
+        Returns:
+            torch.Tensor: Tensor of token indices on configured device.
+        """
+        if not self.vocab:
+            raise RuntimeError("Vocabulary not initialized")
+
+        try:
+            tokens = ["<sos>"] + trace + ["<eos>"]
+            windows = self._split_windows(tokens)
+            first_window = windows[0]
+            indices = [self.vocab[tok] for tok in first_window]
+            return torch.tensor(indices, dtype=torch.long).to(self.opt.get("device", "cpu"))
+        except Exception as e:
+            print(f"Error in preprocess_trace: {e}")
+            fallback = [self.vocab["<sos>"], self.vocab["<eos>"]]
+            return torch.tensor(fallback, dtype=torch.long).to(self.opt.get("device", "cpu"))
 
     def batchify_sequences(self, sequences: List[List[str]], batch_size: int) -> List[torch.Tensor]:
         """
-        Groups sequences of similar length to minimize required padding.
+        Group sequences into batches of similar length to minimize padding.
 
         Args:
-            sequences: List of sequences to process into batches
-            batch_size: Size of each batch
+            sequences (List[List[str]]): Token sequences to batch.
+            batch_size (int): Number of sequences per batch.
 
         Returns:
-            List of tensor batches ready for model processing
+            List[torch.Tensor]: List of stacked tensors, each of shape (batch_size, seq_len).
+                                Returns empty list on error or if inputs are invalid.
         """
-        if not sequences:
+        if not sequences or batch_size <= 0:
             return []
 
         try:
-            # Sort sequences by length for more efficient padding
-            seq_lengths = [len(seq) for seq in sequences]
-            sorted_indices = sorted(range(len(sequences)), key=lambda i: seq_lengths[i])
-            sorted_sequences = [sequences[idx] for idx in sorted_indices]
+            sorted_seqs = sorted(sequences, key=len)
+            batches: List[torch.Tensor] = []
+            pad_idx = self.vocab["<pad>"]
+            unk_idx = self.vocab["<unk>"]
 
-            batches = []
-            for i in range(0, len(sorted_sequences), batch_size):
-                batch = sorted_sequences[i:i + batch_size]
+            for i in range(0, len(sorted_seqs), batch_size):
+                chunk = sorted_seqs[i: i + batch_size]
+                max_len = max(len(s) for s in chunk)
+                tensors: List[torch.Tensor] = []
 
-                # Use minimum necessary padding for this specific batch
-                max_len_in_batch = max(len(seq) for seq in batch)
+                for seq in chunk:
+                    idxs = [self.vocab[tok] if tok in self.vocab.get_itos() else unk_idx for tok in seq]
+                    pad_n = max_len - len(idxs)
+                    if pad_n > 0:
+                        idxs.extend([pad_idx] * pad_n)
+                    tensors.append(torch.tensor(idxs, dtype=torch.long))
 
-                # Create batch with minimum padding
-                padded_batch_tensors = []
-                for seq in batch:
-                    # Convert to vocabulary indices
-                    numerical_seq = self.vocab(seq)
-
-                    # Apply padding if necessary
-                    padding_needed = max_len_in_batch - len(numerical_seq)
-                    if padding_needed > 0:
-                        numerical_seq.extend([self.vocab["<pad>"]] * padding_needed)
-
-                    padded_batch_tensors.append(torch.tensor(numerical_seq, dtype=torch.long))
-
-                batch_tensor = torch.stack(padded_batch_tensors)
-                batches.append(batch_tensor.to(self.opt.get("device", "cpu")))
+                batch = torch.stack(tensors).to(self.opt.get("device", "cpu"))
+                batches.append(batch)
 
             return batches
         except Exception as e:
-            print(f"Error creating batches: {e}")
+            print(f"Error in batchify_sequences: {e}")
             return []
 
     def get_dataset(self, num_test_ex: int = 100, vocab: Optional[torchtext.vocab.Vocab] = None,
@@ -429,36 +465,6 @@ class Dataloader:
             print(f"Error retrieving masked batch labels: {e}")
             device = self.opt.get("device", "cpu")
             return torch.tensor([], device=device), torch.tensor([], dtype=torch.bool, device=device)
-
-    def preprocess_trace(self, trace: List[str]) -> torch.Tensor:
-        """
-        Preprocess a single trace for classification/inference.
-
-        Args:
-            trace: List of event strings in the trace
-
-        Returns:
-            Preprocessed trace tensor of indices
-        """
-        if not self.vocab:
-            raise RuntimeError("Vocabulary not built or loaded. Call get_dataset() first.")
-
-        try:
-            # Add special tokens
-            processed_trace_tokens = ["<sos>"] + trace + ["<eos>"]
-
-            # Apply padding/truncation if configured
-            processed_trace_tokens = self._apply_bptt(processed_trace_tokens)
-
-            # Convert to indices
-            indices = [self.vocab.get(event, self.vocab["<unk>"]) for event in processed_trace_tokens]
-            return torch.tensor(indices, dtype=torch.long).to(self.opt.get("device", "cpu"))
-
-        except Exception as e:
-            print(f"Error preprocessing trace: {e}")
-            # Return a minimal valid tensor
-            return torch.tensor([self.vocab["<sos>"], self.vocab["<eos>"]],
-                                dtype=torch.long).to(self.opt.get("device", "cpu"))
 
     def _apply_bptt(self, tokens: List[str]) -> List[str]:
         """

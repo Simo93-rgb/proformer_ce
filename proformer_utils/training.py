@@ -41,15 +41,15 @@ def calculate_sequence_loss(model: torch.nn.Module, output_flat: torch.Tensor,
         Sequence loss tensor
     """
     try:
-        # Create mask for non-padding tokens
         pad_idx = model.vocab["<pad>"]
         non_pad_mask = targets != pad_idx
 
-        # Calculate loss only on non-padding tokens
         if torch.any(non_pad_mask):
+            # somma delle loss sui token validi
             return F.cross_entropy(
                 output_flat[non_pad_mask],
-                targets[non_pad_mask]
+                targets[non_pad_mask],
+                reduction='sum'
             )
         else:
             return torch.tensor(0.0, device=targets.device, requires_grad=True)

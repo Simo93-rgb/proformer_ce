@@ -48,7 +48,7 @@ def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
 bpi_params = {
     # Parametri di base del batch e sequenza
     'batch_size': 4,  # Dimensione del batch - Numero di esempi elaborati contemporaneamente
-    'bptt': 980,  # Backpropagation Through Time - Lunghezza massima della sequenza di input
+    'bptt': 512,  # Backpropagation Through Time - Lunghezza massima della sequenza di input
 
     # Parametri dell'architettura del transformer
     'd_model': 1024,  # Dimension Model - Dimensione degli embedding e degli strati del transformer - Divisibile per il numero di teste
@@ -68,7 +68,7 @@ bpi_params = {
     'warmup_steps': 6000,  # Warmup Steps - Passi iniziali per incrementare gradualmente il learning rate
     'early_stopping_patience': 10,  # Patience - Epoche senza miglioramento prima di fermare l'addestramento
     'early_stopping_min_delta': 0.0001,  # Min Delta - Miglioramento minimo da considerare significativo
-    'mask_prob': 0.5,  # Mask Probability - Probabilità di mascherare token per apprendimento MLM
+    'mask_prob': 0.8,  # Mask Probability - Probabilità di mascherare token per apprendimento MLM
 
     # Parametri di positional encoding
     'use_pe': True,  # Use Positional Encoding - Se utilizzare l'encoding posizionale
@@ -81,7 +81,7 @@ bpi_params = {
 
     # Parametri di processamento dati
     'split_actions': True,  # Split Actions - Se dividere le azioni in token separati
-    'pad': True,  # Padding - Se applicare padding alle sequenze più corte
+    'pad': False,  # Padding - Se applicare padding alle sequenze più corte
     'test_split_size': 1000,  # Test Split Size - Numero di esempi da riservare per il test
     'use_l2_data': False,  # Use L2 Data - Se utilizzare dati di livello 2 (maggior dettaglio)
 }
