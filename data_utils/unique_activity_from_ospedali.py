@@ -97,7 +97,7 @@ def find_longest_entry_length(csv_path, column_index=1):
     return max_length
 
 if __name__ == '__main__':
-    csv_file = f'{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited.csv'
+    csv_file = f'{DATA_DIR}/ALL_20DRG_2022_2023_CLASS_Duration_ricovero_dimissioni_LAST_17Jan2025_padded_edited_balanced.csv'
     unique_activities = get_unique_activities(csv_file)
     print(unique_activities)
 

@@ -38,35 +38,50 @@ def parse_params(params: Dict[str, Any]) -> Dict[str, Any]:
     parser.add_argument("--early_stopping_patience", type=int, default=params['early_stopping_patience'])
     parser.add_argument("--early_stopping_min_delta", type=float, default=params['early_stopping_min_delta'])
     parser.add_argument("--train", action="store_false", default=True)
+    parser.add_argument("--mask_prob", type=float, default=params['mask_prob'])
     args = parser.parse_args()
     opt = vars(args)
 
     return opt
 
+
 bpi_params = {
-    'batch_size': 16,  # Increase for better gradient estimation
-    'd_hid': 2048,     # Standard ratio: 4x d_model
-    'd_model': 512,    # Keep current size
-    'dropout': 0.25,    # Slightly higher to prevent overfitting
-    'gamma_scheduler': 0.9898196793787607,  # Slower decay for better convergence
-    'lr': 0.00129695816783916,      # Higher learning rate with warmup
-    'warmup_steps': 6000,  # Add warmup for stable initial training
-    'nhead': 8,        # Current value is appropriate
-    'nlayers': 6,      # Current value is good
-    'taxonomy_emb_size': 32,  # Increase taxonomic representation
-    'taxonomy_emb_type': 'laplacian',
-    'use_pe': True,    # Enable proper positional encoding
-    'weight_decay': 1e-5,  # Add L2 regularization
-    "epochs": 300,     # Train longer with early stopping
-    "bptt": 980,
-    "split_actions": True,
-    "pad": True,
-    "test_split_size": 1000,
-    "pos_enc_dropout": 0.1,
-    "use_taxonomy": False,  # Enable if taxonomy data is available
-    "use_l2_data": False,
-    "gradient_clip": 1.0,  # Add gradient clipping for stability
-        # Early stopping parameters
-    'early_stopping_patience': 10,  # Stop after this many epochs without improvement
-    'early_stopping_min_delta': 0.0001,  # Minimum change to count as improvement
+    # Parametri di base del batch e sequenza
+    'batch_size': 4,  # Dimensione del batch - Numero di esempi elaborati contemporaneamente
+    'bptt': 980,  # Backpropagation Through Time - Lunghezza massima della sequenza di input
+
+    # Parametri dell'architettura del transformer
+    'd_model': 1024,  # Dimension Model - Dimensione degli embedding e degli strati del transformer - Divisibile per il numero di teste
+    'd_hid': 2048,  # Dimension Hidden - Dimensione dello strato feed-forward interno del transformer
+    'nlayers': 6,  # Number of Layers - Numero di layer transformer impilati
+    'nhead': 8,  # Number of Heads - Numero di teste nel meccanismo di multi-head attention
+    'dropout': 0.1,  # Dropout Rate - Probabilità di dropout per la regolarizzazione
+
+    # Parametri di ottimizzazione
+    'lr': 0.0000129695816783916,  # Learning Rate - Velocità di apprendimento iniziale
+    'gamma_scheduler': 0.9898196793787607,  # Gamma Scheduler - Fattore di decadimento per lo scheduler LR
+    'weight_decay': 1e-5,  # Weight Decay - Regolarizzazione L2 per prevenire overfitting
+    'gradient_clip': 1.0,  # Gradient Clipping - Limite massimo della norma del gradiente
+
+    # Parametri di addestramento
+    'epochs': 300,  # Epochs - Numero massimo di cicli completi di addestramento
+    'warmup_steps': 6000,  # Warmup Steps - Passi iniziali per incrementare gradualmente il learning rate
+    'early_stopping_patience': 10,  # Patience - Epoche senza miglioramento prima di fermare l'addestramento
+    'early_stopping_min_delta': 0.0001,  # Min Delta - Miglioramento minimo da considerare significativo
+    'mask_prob': 0.5,  # Mask Probability - Probabilità di mascherare token per apprendimento MLM
+
+    # Parametri di positional encoding
+    'use_pe': True,  # Use Positional Encoding - Se utilizzare l'encoding posizionale
+    'pos_enc_dropout': 0.1,  # Positional Encoding Dropout - Dropout specifico per l'encoding posizionale
+
+    # Parametri della tassonomia
+    'use_taxonomy': False,  # Use Taxonomy - Se utilizzare embedding basati su tassonomia
+    'taxonomy_emb_type': 'laplacian',  # Taxonomy Embedding Type - Tipo di embedding per la tassonomia
+    'taxonomy_emb_size': 32,  # Taxonomy Embedding Size - Dimensione degli embedding della tassonomia
+
+    # Parametri di processamento dati
+    'split_actions': True,  # Split Actions - Se dividere le azioni in token separati
+    'pad': True,  # Padding - Se applicare padding alle sequenze più corte
+    'test_split_size': 1000,  # Test Split Size - Numero di esempi da riservare per il test
+    'use_l2_data': False,  # Use L2 Data - Se utilizzare dati di livello 2 (maggior dettaglio)
 }
